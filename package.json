@@ -14,7 +14,7 @@
   "main": "dist/index.js",
   "scripts": {
     "prestart": "npm run build",
-    "build": "tsc",
+    "build": "ncc build src/index.ts -o dist -m",
     "start": "NODE_NO_WARNINGS=1 node dist/index.js"
   },
   "author": "UraniumCorporation <contact@uraniumcube.com> (https://uraniumcube.com/)",
@@ -37,6 +37,7 @@
   },
   "devDependencies": {
     "@types/node": "22.13.5",
+    "@vercel/ncc": "0.38.3",
     "ts-node": "10.9.2",
     "typescript": "5.7.3"
   }
