@@ -1,0 +1,74 @@
+name: PR Contributor Payment
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  pay-contributor:
+    name: Pay PR Contributor
+    # Only run this job when the PR is merged
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract Wallet Address
+        id: extract-wallet
+        run: |
+          DESCRIPTION="${{ github.event.pull_request.body }}"
+          WALLET=$(echo "$DESCRIPTION" | grep -o 'solana:[A-Za-z0-9]\{32,\}' | cut -d':' -f2)
+          if [ -z "$WALLET" ]; then
+            echo "❌ No valid Solana wallet address found in PR description"
+            echo "PR description must include a wallet address in the format:"
+            echo "solana:ADDRESS"
+            exit 1
+          fi
+          echo "Found wallet address: $WALLET"
+          echo "wallet=$WALLET" >> $GITHUB_OUTPUT
+
+      - name: Pay Contributor
+        id: payout
+        uses: ./
+        with:
+          recipient-wallet-address: ${{ steps.extract-wallet.outputs.wallet }}
+          amount: "0.1" # Default payment amount for contributions
+          network: "devnet" # Using devnet for safety, change to mainnet-beta for production
+        env:
+          SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
+
+      - name: Process Results
+        run: |
+          if [[ "${{ steps.payout.outputs.success }}" == "true" ]]; then
+            echo "✅ Successfully paid contributor!"
+            echo "Transaction completed on devnet"
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            PR_TITLE="${{ github.event.pull_request.title }}"
+            PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+            
+            # Add a comment to the PR
+            gh pr comment "$PR_NUMBER" --body "🎉 Payment Successful!
+            
+            Thank you @$PR_AUTHOR for your contribution to \`$PR_TITLE\`!
+            
+            - Amount: 0.1 SOL
+            - Network: devnet
+            - Recipient: \`${{ steps.extract-wallet.outputs.wallet }}\`"
+          else
+            echo "❌ Payment failed:"
+            echo "${{ steps.payout.outputs.error }}"
+            
+            # Add a comment about the failure
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            gh pr comment "$PR_NUMBER" --body "❌ Payment Failed
+            
+            There was an error processing the payment:
+            \`\`\`
+            ${{ steps.payout.outputs.error }}
+            \`\`\`
+            
+            Please contact the repository administrators for assistance."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
