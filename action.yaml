@@ -1,0 +1,25 @@
+name: "Solana Payout Action"
+description: "Automatically send Solana payments to specified wallet addresses"
+author: "UraniumCorporation"
+branding:
+  icon: "dollar-sign"
+  color: "purple"
+inputs:
+  recipient-wallet-address:
+    description: "Solana wallet address of the recipient"
+    required: true
+  amount:
+    description: "Amount of SOL to send"
+    required: true
+  network:
+    description: "Solana network to use (mainnet-beta, devnet, testnet)"
+    required: false
+    default: "mainnet-beta"
+outputs:
+  success:
+    description: "Whether the payment was successful"
+  error:
+    description: "The error that occurred during the payment"
+runs:
+  using: "node20"
+  main: "dist/index.js"
