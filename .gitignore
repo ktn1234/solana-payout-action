@@ -144,3 +144,19 @@ out
 .svelte-kit
 
 # End of https://www.toptal.com/developers/gitignore/api/node
+
+# Build output
+dist/*
+!dist/index.js
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
