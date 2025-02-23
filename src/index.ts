@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { getInput, setFailed } from "@actions/core";
+import { getInput, setOutput, setFailed } from "@actions/core";
 import {
   Connection,
   Keypair,
@@ -113,6 +113,7 @@ async function main(): Promise<void> {
     // Get sender wallet secret from environment variables
     const SENDER_WALLET_SECRET = process.env.SENDER_WALLET_SECRET;
     if (!SENDER_WALLET_SECRET) {
+      setOutput("success", "false");
       throw new Error(
         "Environment variable SENDER_WALLET_SECRET is not set, please set it in the repository secrets"
       );
@@ -212,7 +213,14 @@ async function main(): Promise<void> {
       `Successfully sent ${amount} SOL to ${recipientWalletAddress} on ${network}`
     );
     console.log(`Transaction signature: ${signature}`);
+
+    // Set success output
+    setOutput("success", "true");
   } catch (error) {
+    // Set error output and success as false
+    setOutput("success", "false");
+    setOutput("error", error instanceof Error ? error.message : String(error));
+
     console.error(
       "❌ Error:",
       error instanceof Error ? error.message : String(error)
