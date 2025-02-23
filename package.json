@@ -1,0 +1,42 @@
+{
+  "name": "solana-payout-action",
+  "version": "1.0.0",
+  "description": "Automatically pay contributors in Solana",
+  "keywords": [
+    "solana",
+    "payout",
+    "action",
+    "github",
+    "actions",
+    "bounty",
+    "reward"
+  ],
+  "main": "dist/index.js",
+  "scripts": {
+    "prestart": "npm run build",
+    "build": "tsc",
+    "start": "NODE_NO_WARNINGS=1 node dist/index.js"
+  },
+  "author": "UraniumCorporation <contact@uraniumcube.com> (https://uraniumcube.com/)",
+  "license": "MIT",
+  "homepage": "https://github.com/UraniumCorporation/solana-payout-action#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/UraniumCorporation/solana-payout-action.git"
+  },
+  "bugs": {
+    "url": "https://github.com/UraniumCorporation/solana-payout-action/issues"
+  },
+  "engines": {
+    "node": "22.13.1"
+  },
+  "dependencies": {
+    "@actions/core": "1.11.1",
+    "@solana/web3.js": "1.98.0",
+    "dotenv": "16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.5",
+    "typescript": "5.7.3"
+  }
+}
