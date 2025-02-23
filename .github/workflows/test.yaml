@@ -1,0 +1,49 @@
+name: Test Solana Payout Action
+on:
+  # Manual trigger with inputs
+  workflow_dispatch:
+    inputs:
+      recipient:
+        description: "Recipient wallet address"
+        required: true
+      amount:
+        description: "Amount in SOL"
+        required: true
+        default: "0.1"
+      network:
+        description: "Solana network (mainnet-beta, devnet, testnet)"
+        required: true
+        default: "devnet"
+        type: choice
+        options:
+          - mainnet-beta
+          - devnet
+          - testnet
+
+jobs:
+  test-local:
+    name: Test Local Action
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test Solana Payout Action
+        uses: ./ # Uses the action in the root directory
+        id: payout
+        with:
+          recipient-wallet-address: ${{ inputs.recipient }}
+          amount: ${{ inputs.amount }}
+          network: ${{ inputs.network }}
+        env:
+          SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
+
+      - name: Check Results
+        run: |
+          if [[ "${{ steps.payout.outputs.success }}" == "true" ]]; then
+            echo "✅ Payment successful!"
+          else
+            echo "❌ Payment failed:"
+            echo "${{ steps.payout.outputs.error }}"
+            exit 1
+          fi
