@@ -9,12 +9,15 @@ inputs:
     description: "Solana wallet address of the recipient"
     required: true
   amount:
-    description: "Amount of SOL to send"
+    description: "Amount to send (in SOL or tokens)"
     required: true
   network:
     description: "Solana network to use (mainnet-beta, devnet, testnet)"
     required: false
     default: "mainnet-beta"
+  token:
+    description: "Token to send - either 'SOL' or an SPL token address"
+    required: true
 outputs:
   success:
     description: "Whether the payment was successful"

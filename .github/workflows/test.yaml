@@ -7,9 +7,13 @@ on:
         description: "Recipient wallet address"
         required: true
       amount:
-        description: "Amount in SOL"
+        description: "Amount to send (in SOL or tokens)"
         required: true
         default: "0.1"
+      token:
+        description: "Token to send - either 'SOL' or an SPL token address"
+        required: true
+        default: "SOL"
       network:
         description: "Solana network (mainnet-beta, devnet, testnet)"
         required: true
@@ -35,6 +39,7 @@ jobs:
           recipient-wallet-address: ${{ inputs.recipient }}
           amount: ${{ inputs.amount }}
           network: ${{ inputs.network }}
+          token: ${{ inputs.token }}
         env:
           SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
 
