@@ -29,13 +29,17 @@ const NETWORK_URLS: NetworkUrls = {
 };
 
 // Solana's minimum transaction fee (5000 lamports per signature)
-// We add a conservative buffer (0.1 SOL) to ensure transaction success
+// We add a conservative buffer to ensure transaction success
 // This covers potential fee increases due to:
 // - Network congestion
 // - Number of instructions in the transaction
 // - Additional signatures if required
 // - Compute units consumed
 const TRANSACTION_FEE_BUFFER = 0.1 * LAMPORTS_PER_SOL; // 0.1 SOL buffer for fees
+
+// Cost to create a token account (rent exemption + transaction fee)
+// This is approximately 0.00203928 SOL as of early 2023
+const TOKEN_ACCOUNT_CREATION_COST = 0.003 * LAMPORTS_PER_SOL; // 0.003 SOL for token account creation
 
 async function validateWalletAddress(
   connection: Connection,
@@ -81,13 +85,24 @@ async function validateSenderBalance(
   connection: Connection,
   senderPubKey: PublicKey,
   requiredAmount: number,
-  network: string
+  network: string,
+  mayNeedTokenAccount: boolean = false
 ): Promise<number> {
   try {
     const balance = await connection.getBalance(senderPubKey);
 
     // Calculate total required with a conservative fee buffer
-    const totalRequired = requiredAmount + TRANSACTION_FEE_BUFFER;
+    let totalRequired = requiredAmount + TRANSACTION_FEE_BUFFER;
+
+    // Add token account creation cost if needed
+    if (mayNeedTokenAccount) {
+      totalRequired += TOKEN_ACCOUNT_CREATION_COST;
+      console.log(
+        `Including potential token account creation cost: ${
+          TOKEN_ACCOUNT_CREATION_COST / LAMPORTS_PER_SOL
+        } SOL`
+      );
+    }
 
     // Format for human-readable display
     const solBalance = balance / LAMPORTS_PER_SOL;
@@ -117,7 +132,9 @@ async function validateSenderBalance(
         `Insufficient funds in sender wallet on ${network} network. ` +
           `Balance: ${solBalance.toLocaleString()} SOL, ` +
           `Required: ${solTotalRequired.toLocaleString()} SOL ` +
-          `(including ${feeBuffer.toLocaleString()} SOL buffer for transaction fees)`
+          `(including ${feeBuffer.toLocaleString()} SOL buffer for transaction fees${
+            mayNeedTokenAccount ? ` and potential token account creation` : ""
+          })`
       );
     }
 
@@ -391,6 +408,7 @@ async function main(): Promise<void> {
 
         // Check recipient token account if it exists
         console.log("Checking recipient token account...");
+        let recipientHasTokenAccount = false;
         try {
           const recipientTokenAccount = await getOrCreateAssociatedTokenAccount(
             connection,
@@ -401,6 +419,7 @@ async function main(): Promise<void> {
           );
 
           if (recipientTokenAccount) {
+            recipientHasTokenAccount = true;
             const recipientAccountInfo = await getAccount(
               connection,
               recipientTokenAccount.address
@@ -411,14 +430,16 @@ async function main(): Promise<void> {
             console.log(
               `Recipient token balance: ${recipientBalanceFormatted.toLocaleString()} ${token} (${recipientBalance.toString()} raw)`
             );
-          } else {
-            console.log(
-              "Recipient doesn't have a token account yet. It will be created during transfer."
-            );
           }
         } catch (error) {
+          recipientHasTokenAccount = false;
           console.log(
             "Recipient doesn't have a token account yet. It will be created during transfer."
+          );
+          console.log(
+            `This will require an additional ~${
+              TOKEN_ACCOUNT_CREATION_COST / LAMPORTS_PER_SOL
+            } SOL from the sender for account creation.`
           );
         }
 
@@ -428,7 +449,8 @@ async function main(): Promise<void> {
           connection,
           senderPubKey,
           0, // No SOL transfer, just need fees
-          network
+          network,
+          !recipientHasTokenAccount // May need token account if recipient doesn't have one
         );
         console.log("✓ Sufficient SOL balance for fees confirmed");
 
@@ -445,8 +467,14 @@ async function main(): Promise<void> {
           connection,
           senderKeypair,
           tokenInfo.mint,
-          recipientPubKey
+          recipientPubKey,
+          true // Always create if it doesn't exist
         );
+
+        console.log(
+          `Recipient token account: ${recipientTokenAccount.address.toString()}`
+        );
+        console.log(`✓ Recipient token account is ready for transfer`);
 
         // Convert amount to token amount considering decimals
         const tokenAmount = BigInt(
@@ -471,7 +499,7 @@ async function main(): Promise<void> {
         throw new Error(
           `Failed to set up token transfer: ${
             error instanceof Error ? error.message : String(error)
-          }`
+          }. This may be due to insufficient SOL in the sender's account to create a token account for the recipient. Please ensure the sender has enough SOL to cover transaction fees and token account creation.`
         );
       }
     } else {
@@ -483,7 +511,8 @@ async function main(): Promise<void> {
         connection,
         senderPubKey,
         requiredAmount,
-        network
+        network,
+        false // No need for token account
       );
       console.log(
         `Sender SOL balance: ${senderBalance / LAMPORTS_PER_SOL} SOL`
