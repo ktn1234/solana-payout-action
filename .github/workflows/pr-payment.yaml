@@ -5,7 +5,7 @@ on:
 
 env:
   SOLANA_NETWORK: "devnet" # Change to "mainnet-beta" for production
-  TOKEN_ADDRESS: "AAVehbKowfsL6BCUQ4Cniddk4YmphV3HY4dJNSYUpNqa"
+  TOKEN_ADDRESS: "FueDfaFMNwohixXqfmyeCu6RPUvDGuEgzNkikbtWvEb4"
 
 jobs:
   pay-contributor:
