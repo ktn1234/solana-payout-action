@@ -91,10 +91,11 @@ jobs:
           let codeowners = [];
           try {
             const codeownersFile = fs.readFileSync('.github/CODEOWNERS', 'utf8');
+            // Parse CODEOWNERS file with simple format: @user1 @user2
             codeowners = codeownersFile
-              .split('\n')
-              .filter(line => !line.startsWith('#') && line.trim() !== '')
-              .map(line => line.split(/\s+/)[0].replace('@', '').trim())
+              .trim()
+              .split(/\s+/)
+              .map(username => username.replace('@', ''))
               .filter(Boolean);
           } catch (error) {
             console.log(`Error reading CODEOWNERS file: ${error.message}`);
@@ -165,10 +166,11 @@ jobs:
           let codeowners = [];
           try {
             const codeownersFile = fs.readFileSync('.github/CODEOWNERS', 'utf8');
+            // Parse CODEOWNERS file with simple format: @user1 @user2
             codeowners = codeownersFile
-              .split('\n')
-              .filter(line => !line.startsWith('#') && line.trim() !== '')
-              .map(line => line.split(/\s+/)[0].replace('@', '').trim())
+              .trim()
+              .split(/\s+/)
+              .map(username => username.replace('@', ''))
               .filter(Boolean);
           } catch (error) {
             console.log(`Error reading CODEOWNERS file: ${error.message}`);
