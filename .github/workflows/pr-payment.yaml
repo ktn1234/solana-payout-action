@@ -20,185 +20,244 @@ jobs:
       - name: Extract Wallet Address
         id: extract-wallet
         run: |
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          PR_AUTHOR="${{ github.event.pull_request.user.login }}"
-          REPO="${{ github.repository }}"
+          const { execSync } = require('child_process');
+          const fs = require('fs');
 
-          echo "Looking for wallet address in comments by PR author: $PR_AUTHOR"
+          // Get PR information from environment variables
+          const prNumber = process.env.PR_NUMBER;
+          const prAuthor = process.env.PR_AUTHOR;
+          const repo = process.env.REPO;
 
-          # Get all comments on the PR
-          COMMENTS=$(gh api repos/$REPO/issues/$PR_NUMBER/comments --paginate)
+          console.log(`Looking for wallet address in comments by PR author: ${prAuthor}`);
 
-          # Look for wallet address in comments by the PR author
-          # Process all comments to find the most recent wallet address
-          WALLET=""
-          echo "$COMMENTS" | jq -c '.[]' | while read -r comment; do
-            AUTHOR=$(echo "$comment" | jq -r '.user.login')
-            BODY=$(echo "$comment" | jq -r '.body')
+          // Get all comments on the PR
+          const commentsCmd = `gh api repos/${repo}/issues/${prNumber}/comments --paginate`;
+          const commentsOutput = execSync(commentsCmd, { encoding: 'utf8' });
+          const comments = JSON.parse(commentsOutput);
+
+          // Process all comments to find the most recent wallet address
+          let wallet = "";
+
+          for (const comment of comments) {
+            const author = comment.user.login;
+            const body = comment.body;
             
-            # Check if the comment is from the PR author
-            if [ "$AUTHOR" = "$PR_AUTHOR" ]; then
-              # Look for Solana wallet address
-              FOUND_WALLET=$(echo "$BODY" | grep -o 'solana:[A-Za-z0-9]\{32,\}' | cut -d':' -f2)
-              if [ ! -z "$FOUND_WALLET" ]; then
-                echo "Found wallet address in comment by PR author: $FOUND_WALLET"
-                # Keep updating the wallet variable to use the most recent one
-                WALLET=$FOUND_WALLET
-              fi
-            fi
-          done
+            // Check if the comment is from the PR author
+            if (author === prAuthor) {
+              // Look for Solana wallet address using regex
+              const walletMatch = body.match(/solana:([A-Za-z0-9]{32,})/);
+              if (walletMatch && walletMatch[1]) {
+                const foundWallet = walletMatch[1];
+                console.log(`Found wallet address in comment by PR author: ${foundWallet}`);
+                // Keep updating the wallet variable to use the most recent one
+                wallet = foundWallet;
+              }
+            }
+          }
 
-          if [ -z "$WALLET" ]; then
-            echo "❌ No valid Solana wallet address found in PR author's comments"
-            echo "PR author must include a wallet address in a comment with the format:"
-            echo "solana:ADDRESS"
-            exit 1
-          fi
+          if (!wallet) {
+            console.log("❌ No valid Solana wallet address found in PR author's comments");
+            console.log("PR author must include a wallet address in a comment with the format:");
+            console.log("solana:ADDRESS");
+            process.exit(1);
+          }
 
-          echo "Using most recent wallet address: $WALLET"
-          echo "wallet=$WALLET" >> $GITHUB_OUTPUT
+          console.log(`Using most recent wallet address: ${wallet}`);
+          // Set output for GitHub Actions
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `wallet=${wallet}\n`);
+        shell: node {0}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO: ${{ github.repository }}
 
       - name: Extract Issue Numbers from CODEOWNER Comments
         id: extract-issues
         run: |
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          REPO="${{ github.repository }}"
+          const { execSync } = require('child_process');
+          const fs = require('fs');
 
-          # Get all comments on the PR
-          COMMENTS=$(gh api repos/$REPO/issues/$PR_NUMBER/comments --paginate)
+          // Get PR information from environment variables
+          const prNumber = process.env.PR_NUMBER;
+          const repo = process.env.REPO;
 
-          # Get the list of CODEOWNERS from the CODEOWNERS file
-          CODEOWNERS=$(cat .github/CODEOWNERS | grep -v "^#" | grep -v "^$" | awk '{print $1}' | tr -d '@' | tr '\n' ' ')
-          echo "CODEOWNERS: $CODEOWNERS"
+          // Get all comments on the PR
+          const commentsCmd = `gh api repos/${repo}/issues/${prNumber}/comments --paginate`;
+          const commentsOutput = execSync(commentsCmd, { encoding: 'utf8' });
+          const comments = JSON.parse(commentsOutput);
 
-          # Initialize an empty array for issue numbers
-          ISSUE_NUMBERS=()
+          // Get the list of CODEOWNERS from the CODEOWNERS file
+          let codeowners = [];
+          try {
+            const codeownersFile = fs.readFileSync('.github/CODEOWNERS', 'utf8');
+            codeowners = codeownersFile
+              .split('\n')
+              .filter(line => !line.startsWith('#') && line.trim() !== '')
+              .map(line => line.split(/\s+/)[0].replace('@', '').trim())
+              .filter(Boolean);
+          } catch (error) {
+            console.log(`Error reading CODEOWNERS file: ${error.message}`);
+          }
 
-          # Loop through each comment to find those from CODEOWNERS that mention closing issues
-          echo "$COMMENTS" | jq -c '.[]' | while read -r comment; do
-            AUTHOR=$(echo "$comment" | jq -r '.user.login')
-            BODY=$(echo "$comment" | jq -r '.body')
+          console.log(`CODEOWNERS: ${codeowners.join(' ')}`);
+
+          // Initialize an array for issue numbers
+          const issueNumbers = [];
+
+          // Loop through each comment to find those from CODEOWNERS that mention closing issues
+          for (const comment of comments) {
+            const author = comment.user.login;
+            const body = comment.body;
             
-            # Check if the author is a CODEOWNER
-            if echo "$CODEOWNERS" | grep -q "$AUTHOR"; then
-              # Look for closing keywords followed by issue numbers
-              CLOSING_KEYWORDS="[Cc][Ll][Oo][Ss][Ee][Ss]|[Ff][Ii][Xx][Ee][Ss]|[Rr][Ee][Ss][Oo][Ll][Vv][Ee][Ss]"
-              if echo "$BODY" | grep -E "($CLOSING_KEYWORDS) #[0-9]+" > /dev/null; then
-                # Extract the issue number
-                ISSUE=$(echo "$BODY" | grep -oE "($CLOSING_KEYWORDS) #[0-9]+" | grep -oE "#[0-9]+" | tr -d '#')
-                if [ ! -z "$ISSUE" ]; then
-                  echo "Found issue #$ISSUE mentioned by CODEOWNER $AUTHOR"
-                  ISSUE_NUMBERS+=("$ISSUE")
-                fi
-              fi
-            fi
-          done
+            // Check if the author is a CODEOWNER
+            if (codeowners.includes(author)) {
+              // Look for closing keywords followed by issue numbers
+              const closingKeywordsRegex = /(?:closes|fixes|resolves)\s+#(\d+)/gi;
+              let match;
+              
+              while ((match = closingKeywordsRegex.exec(body)) !== null) {
+                const issueNumber = match[1];
+                console.log(`Found issue #${issueNumber} mentioned by CODEOWNER ${author}`);
+                if (!issueNumbers.includes(issueNumber)) {
+                  issueNumbers.push(issueNumber);
+                }
+              }
+            }
+          }
 
-          # Convert array to comma-separated string
-          ISSUES_CSV=$(IFS=,; echo "${ISSUE_NUMBERS[*]}")
+          // Convert array to comma-separated string
+          const issuesCsv = issueNumbers.length > 0 ? issueNumbers.join(',') : 'none';
 
-          if [ -z "$ISSUES_CSV" ]; then
-            echo "⚠️ No issues found in CODEOWNER comments"
-            ISSUES_CSV="none"
-          else
-            echo "Found issues: $ISSUES_CSV"
-          fi
+          if (issuesCsv === 'none') {
+            console.log("⚠️ No issues found in CODEOWNER comments");
+          } else {
+            console.log(`Found issues: ${issuesCsv}`);
+          }
 
-          echo "issues=$ISSUES_CSV" >> $GITHUB_OUTPUT
+          // Set output for GitHub Actions
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `issues=${issuesCsv}\n`);
+        shell: node {0}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
 
       - name: Calculate Bounty Amount
         id: calculate-bounty
         run: |
-          REPO="${{ github.repository }}"
-          ISSUES="${{ steps.extract-issues.outputs.issues }}"
+          const { execSync } = require('child_process');
+          const fs = require('fs');
 
-          if [[ "$ISSUES" == "none" ]]; then
-            echo "No issues found, skipping payment"
-            echo "total_bounty=0" >> $GITHUB_OUTPUT
-            echo "bounty_details=No issues found" >> $GITHUB_OUTPUT
-            echo "should_pay=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+          // Get inputs from environment variables
+          const repo = process.env.REPO;
+          const issues = process.env.ISSUES;
 
-          # Get the list of CODEOWNERS from the CODEOWNERS file
-          CODEOWNERS=$(cat .github/CODEOWNERS | grep -v "^#" | grep -v "^$" | awk '{print $1}' | tr -d '@' | tr '\n' ' ')
+          if (issues === 'none') {
+            console.log("No issues found, skipping payment");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "total_bounty=0\n");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "bounty_details=No issues found\n");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "should_pay=false\n");
+            process.exit(0);
+          }
 
-          # Initialize variables for bounty calculation
-          TOTAL_BOUNTY=0
-          BOUNTY_DETAILS=""
-          FOUND_BOUNTY=false
+          // Get the list of CODEOWNERS from the CODEOWNERS file
+          let codeowners = [];
+          try {
+            const codeownersFile = fs.readFileSync('.github/CODEOWNERS', 'utf8');
+            codeowners = codeownersFile
+              .split('\n')
+              .filter(line => !line.startsWith('#') && line.trim() !== '')
+              .map(line => line.split(/\s+/)[0].replace('@', '').trim())
+              .filter(Boolean);
+          } catch (error) {
+            console.log(`Error reading CODEOWNERS file: ${error.message}`);
+          }
 
-          # Process each issue
-          IFS=',' read -ra ISSUE_ARRAY <<< "$ISSUES"
-          for ISSUE_NUMBER in "${ISSUE_ARRAY[@]}"; do
-            echo "Processing issue #$ISSUE_NUMBER"
+          // Initialize variables for bounty calculation
+          let totalBounty = 0;
+          let bountyDetails = [];
+          let foundBounty = false;
+
+          // Process each issue
+          const issueArray = issues.split(',');
+
+          for (const issueNumber of issueArray) {
+            console.log(`Processing issue #${issueNumber}`);
             
-            # Get issue details
-            ISSUE_DATA=$(gh api repos/$REPO/issues/$ISSUE_NUMBER)
-            
-            # Check if issue has bounty label
-            HAS_BOUNTY_LABEL=$(echo "$ISSUE_DATA" | jq '.labels[] | select(.name=="bounty")' | wc -l)
-            
-            if [ "$HAS_BOUNTY_LABEL" -gt 0 ]; then
-              echo "Issue #$ISSUE_NUMBER has bounty label"
+            try {
+              // Get issue details
+              const issueDataCmd = `gh api repos/${repo}/issues/${issueNumber}`;
+              const issueDataOutput = execSync(issueDataCmd, { encoding: 'utf8' });
+              const issueData = JSON.parse(issueDataOutput);
               
-              # Get all comments on the issue
-              ISSUE_COMMENTS=$(gh api repos/$REPO/issues/$ISSUE_NUMBER/comments --paginate)
+              // Check if issue has bounty label
+              const hasBountyLabel = issueData.labels && 
+                issueData.labels.some(label => label.name === 'bounty');
               
-              # Find bounty amount in CODEOWNER comments
-              BOUNTY_AMOUNT=""
-              echo "$ISSUE_COMMENTS" | jq -c '.[]' | while read -r comment; do
-                AUTHOR=$(echo "$comment" | jq -r '.user.login')
-                BODY=$(echo "$comment" | jq -r '.body')
+              if (hasBountyLabel) {
+                console.log(`Issue #${issueNumber} has bounty label`);
                 
-                # Check if the author is a CODEOWNER
-                if echo "$CODEOWNERS" | grep -q "$AUTHOR"; then
-                  # Look for bounty specification
-                  if echo "$BODY" | grep -E "[Bb][Oo][Uu][Nn][Tt][Yy]:" > /dev/null; then
-                    # Extract the bounty amount
-                    AMOUNT=$(echo "$BODY" | grep -oE "[Bb][Oo][Uu][Nn][Tt][Yy]: *[0-9]+(\.[0-9]+)? *\\\$MAIAR" | grep -oE "[0-9]+(\.[0-9]+)?")
-                    if [ ! -z "$AMOUNT" ]; then
-                      echo "Found bounty amount: $AMOUNT for issue #$ISSUE_NUMBER"
-                      BOUNTY_AMOUNT=$AMOUNT
-                      FOUND_BOUNTY=true
-                      break
-                    fi
-                  fi
-                fi
-              done
-              
-              if [ ! -z "$BOUNTY_AMOUNT" ]; then
-                echo "Adding $BOUNTY_AMOUNT to total bounty"
-                TOTAL_BOUNTY=$(echo "$TOTAL_BOUNTY + $BOUNTY_AMOUNT" | bc)
-                BOUNTY_DETAILS="${BOUNTY_DETAILS}Issue #$ISSUE_NUMBER: $BOUNTY_AMOUNT, "
-              else
-                echo "No bounty amount found for issue #$ISSUE_NUMBER"
-              fi
-            else
-              echo "Issue #$ISSUE_NUMBER does not have bounty label"
-            fi
-          done
+                // Get all comments on the issue
+                const issueCommentsCmd = `gh api repos/${repo}/issues/${issueNumber}/comments --paginate`;
+                const issueCommentsOutput = execSync(issueCommentsCmd, { encoding: 'utf8' });
+                const issueComments = JSON.parse(issueCommentsOutput);
+                
+                // Find bounty amount in CODEOWNER comments
+                let bountyAmount = null;
+                
+                for (const comment of issueComments) {
+                  const author = comment.user.login;
+                  const body = comment.body;
+                  
+                  // Check if the author is a CODEOWNER
+                  if (codeowners.includes(author)) {
+                    // Look for bounty specification
+                    const bountyMatch = body.match(/[Bb][Oo][Uu][Nn][Tt][Yy]:\s*(\d+(?:\.\d+)?)\s*\$MAIAR/);
+                    if (bountyMatch && bountyMatch[1]) {
+                      const amount = parseFloat(bountyMatch[1]);
+                      console.log(`Found bounty amount: ${amount} for issue #${issueNumber}`);
+                      bountyAmount = amount;
+                      foundBounty = true;
+                      break;
+                    }
+                  }
+                }
+                
+                if (bountyAmount !== null) {
+                  console.log(`Adding ${bountyAmount} to total bounty`);
+                  totalBounty += bountyAmount;
+                  bountyDetails.push(`Issue #${issueNumber}: ${bountyAmount}`);
+                } else {
+                  console.log(`No bounty amount found for issue #${issueNumber}`);
+                }
+              } else {
+                console.log(`Issue #${issueNumber} does not have bounty label`);
+              }
+            } catch (error) {
+              console.log(`Error processing issue #${issueNumber}: ${error.message}`);
+            }
+          }
 
-          # Remove trailing comma and space from bounty details
-          BOUNTY_DETAILS=$(echo "$BOUNTY_DETAILS" | sed 's/, $//')
+          // Join bounty details with commas
+          const bountyDetailsStr = bountyDetails.join(', ');
 
-          # If no bounty was found, skip payment
-          if [ "$FOUND_BOUNTY" = false ] || [ $(echo "$TOTAL_BOUNTY == 0" | bc) -eq 1 ]; then
-            echo "No bounty amounts found, skipping payment"
-            echo "should_pay=false" >> $GITHUB_OUTPUT
-          else
-            echo "Total bounty amount: $TOTAL_BOUNTY"
-            echo "should_pay=true" >> $GITHUB_OUTPUT
-          fi
+          // If no bounty was found, skip payment
+          if (!foundBounty || totalBounty === 0) {
+            console.log("No bounty amounts found, skipping payment");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "should_pay=false\n");
+          } else {
+            console.log(`Total bounty amount: ${totalBounty}`);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "should_pay=true\n");
+          }
 
-          echo "total_bounty=$TOTAL_BOUNTY" >> $GITHUB_OUTPUT
-          echo "bounty_details=$BOUNTY_DETAILS" >> $GITHUB_OUTPUT
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `total_bounty=${totalBounty}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `bounty_details=${bountyDetailsStr}\n`);
+        shell: node {0}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ISSUES: ${{ steps.extract-issues.outputs.issues }}
 
       - name: Pay Contributor
         id: payout
