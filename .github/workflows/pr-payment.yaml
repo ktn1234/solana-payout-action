@@ -3,6 +3,10 @@ on:
   pull_request:
     types: [closed]
 
+env:
+  SOLANA_NETWORK: "devnet" # Change to "mainnet-beta" for production
+  TOKEN_ADDRESS: "AAVehbKowfsL6BCUQ4Cniddk4YmphV3HY4dJNSYUpNqa"
+
 jobs:
   pay-contributor:
     name: Pay PR Contributor
@@ -16,28 +20,200 @@ jobs:
       - name: Extract Wallet Address
         id: extract-wallet
         run: |
-          DESCRIPTION="${{ github.event.pull_request.body }}"
-          WALLET=$(echo "$DESCRIPTION" | grep -o 'solana:[A-Za-z0-9]\{32,\}' | cut -d':' -f2)
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+          REPO="${{ github.repository }}"
+
+          echo "Looking for wallet address in comments by PR author: $PR_AUTHOR"
+
+          # Get all comments on the PR
+          COMMENTS=$(gh api repos/$REPO/issues/$PR_NUMBER/comments --paginate)
+
+          # Look for wallet address in comments by the PR author
+          # Process all comments to find the most recent wallet address
+          WALLET=""
+          echo "$COMMENTS" | jq -c '.[]' | while read -r comment; do
+            AUTHOR=$(echo "$comment" | jq -r '.user.login')
+            BODY=$(echo "$comment" | jq -r '.body')
+            
+            # Check if the comment is from the PR author
+            if [ "$AUTHOR" = "$PR_AUTHOR" ]; then
+              # Look for Solana wallet address
+              FOUND_WALLET=$(echo "$BODY" | grep -o 'solana:[A-Za-z0-9]\{32,\}' | cut -d':' -f2)
+              if [ ! -z "$FOUND_WALLET" ]; then
+                echo "Found wallet address in comment by PR author: $FOUND_WALLET"
+                # Keep updating the wallet variable to use the most recent one
+                WALLET=$FOUND_WALLET
+              fi
+            fi
+          done
+
           if [ -z "$WALLET" ]; then
-            echo "❌ No valid Solana wallet address found in PR description"
-            echo "PR description must include a wallet address in the format:"
+            echo "❌ No valid Solana wallet address found in PR author's comments"
+            echo "PR author must include a wallet address in a comment with the format:"
             echo "solana:ADDRESS"
             exit 1
           fi
-          echo "Found wallet address: $WALLET"
+
+          echo "Using most recent wallet address: $WALLET"
           echo "wallet=$WALLET" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Issue Numbers from CODEOWNER Comments
+        id: extract-issues
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          REPO="${{ github.repository }}"
+
+          # Get all comments on the PR
+          COMMENTS=$(gh api repos/$REPO/issues/$PR_NUMBER/comments --paginate)
+
+          # Get the list of CODEOWNERS from the CODEOWNERS file
+          CODEOWNERS=$(cat .github/CODEOWNERS | grep -v "^#" | grep -v "^$" | awk '{print $1}' | tr -d '@' | tr '\n' ' ')
+          echo "CODEOWNERS: $CODEOWNERS"
+
+          # Initialize an empty array for issue numbers
+          ISSUE_NUMBERS=()
+
+          # Loop through each comment to find those from CODEOWNERS that mention closing issues
+          echo "$COMMENTS" | jq -c '.[]' | while read -r comment; do
+            AUTHOR=$(echo "$comment" | jq -r '.user.login')
+            BODY=$(echo "$comment" | jq -r '.body')
+            
+            # Check if the author is a CODEOWNER
+            if echo "$CODEOWNERS" | grep -q "$AUTHOR"; then
+              # Look for closing keywords followed by issue numbers
+              CLOSING_KEYWORDS="[Cc][Ll][Oo][Ss][Ee][Ss]|[Ff][Ii][Xx][Ee][Ss]|[Rr][Ee][Ss][Oo][Ll][Vv][Ee][Ss]"
+              if echo "$BODY" | grep -E "($CLOSING_KEYWORDS) #[0-9]+" > /dev/null; then
+                # Extract the issue number
+                ISSUE=$(echo "$BODY" | grep -oE "($CLOSING_KEYWORDS) #[0-9]+" | grep -oE "#[0-9]+" | tr -d '#')
+                if [ ! -z "$ISSUE" ]; then
+                  echo "Found issue #$ISSUE mentioned by CODEOWNER $AUTHOR"
+                  ISSUE_NUMBERS+=("$ISSUE")
+                fi
+              fi
+            fi
+          done
+
+          # Convert array to comma-separated string
+          ISSUES_CSV=$(IFS=,; echo "${ISSUE_NUMBERS[*]}")
+
+          if [ -z "$ISSUES_CSV" ]; then
+            echo "⚠️ No issues found in CODEOWNER comments"
+            ISSUES_CSV="none"
+          else
+            echo "Found issues: $ISSUES_CSV"
+          fi
+
+          echo "issues=$ISSUES_CSV" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calculate Bounty Amount
+        id: calculate-bounty
+        run: |
+          REPO="${{ github.repository }}"
+          ISSUES="${{ steps.extract-issues.outputs.issues }}"
+
+          if [[ "$ISSUES" == "none" ]]; then
+            echo "No issues found, skipping payment"
+            echo "total_bounty=0" >> $GITHUB_OUTPUT
+            echo "bounty_details=No issues found" >> $GITHUB_OUTPUT
+            echo "should_pay=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get the list of CODEOWNERS from the CODEOWNERS file
+          CODEOWNERS=$(cat .github/CODEOWNERS | grep -v "^#" | grep -v "^$" | awk '{print $1}' | tr -d '@' | tr '\n' ' ')
+
+          # Initialize variables for bounty calculation
+          TOTAL_BOUNTY=0
+          BOUNTY_DETAILS=""
+          FOUND_BOUNTY=false
+
+          # Process each issue
+          IFS=',' read -ra ISSUE_ARRAY <<< "$ISSUES"
+          for ISSUE_NUMBER in "${ISSUE_ARRAY[@]}"; do
+            echo "Processing issue #$ISSUE_NUMBER"
+            
+            # Get issue details
+            ISSUE_DATA=$(gh api repos/$REPO/issues/$ISSUE_NUMBER)
+            
+            # Check if issue has bounty label
+            HAS_BOUNTY_LABEL=$(echo "$ISSUE_DATA" | jq '.labels[] | select(.name=="bounty")' | wc -l)
+            
+            if [ "$HAS_BOUNTY_LABEL" -gt 0 ]; then
+              echo "Issue #$ISSUE_NUMBER has bounty label"
+              
+              # Get all comments on the issue
+              ISSUE_COMMENTS=$(gh api repos/$REPO/issues/$ISSUE_NUMBER/comments --paginate)
+              
+              # Find bounty amount in CODEOWNER comments
+              BOUNTY_AMOUNT=""
+              echo "$ISSUE_COMMENTS" | jq -c '.[]' | while read -r comment; do
+                AUTHOR=$(echo "$comment" | jq -r '.user.login')
+                BODY=$(echo "$comment" | jq -r '.body')
+                
+                # Check if the author is a CODEOWNER
+                if echo "$CODEOWNERS" | grep -q "$AUTHOR"; then
+                  # Look for bounty specification
+                  if echo "$BODY" | grep -E "[Bb][Oo][Uu][Nn][Tt][Yy]:" > /dev/null; then
+                    # Extract the bounty amount
+                    AMOUNT=$(echo "$BODY" | grep -oE "[Bb][Oo][Uu][Nn][Tt][Yy]: *[0-9]+(\.[0-9]+)? *\\\$MAIAR" | grep -oE "[0-9]+(\.[0-9]+)?")
+                    if [ ! -z "$AMOUNT" ]; then
+                      echo "Found bounty amount: $AMOUNT for issue #$ISSUE_NUMBER"
+                      BOUNTY_AMOUNT=$AMOUNT
+                      FOUND_BOUNTY=true
+                      break
+                    fi
+                  fi
+                fi
+              done
+              
+              if [ ! -z "$BOUNTY_AMOUNT" ]; then
+                echo "Adding $BOUNTY_AMOUNT to total bounty"
+                TOTAL_BOUNTY=$(echo "$TOTAL_BOUNTY + $BOUNTY_AMOUNT" | bc)
+                BOUNTY_DETAILS="${BOUNTY_DETAILS}Issue #$ISSUE_NUMBER: $BOUNTY_AMOUNT, "
+              else
+                echo "No bounty amount found for issue #$ISSUE_NUMBER"
+              fi
+            else
+              echo "Issue #$ISSUE_NUMBER does not have bounty label"
+            fi
+          done
+
+          # Remove trailing comma and space from bounty details
+          BOUNTY_DETAILS=$(echo "$BOUNTY_DETAILS" | sed 's/, $//')
+
+          # If no bounty was found, skip payment
+          if [ "$FOUND_BOUNTY" = false ] || [ $(echo "$TOTAL_BOUNTY == 0" | bc) -eq 1 ]; then
+            echo "No bounty amounts found, skipping payment"
+            echo "should_pay=false" >> $GITHUB_OUTPUT
+          else
+            echo "Total bounty amount: $TOTAL_BOUNTY"
+            echo "should_pay=true" >> $GITHUB_OUTPUT
+          fi
+
+          echo "total_bounty=$TOTAL_BOUNTY" >> $GITHUB_OUTPUT
+          echo "bounty_details=$BOUNTY_DETAILS" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pay Contributor
         id: payout
+        if: steps.calculate-bounty.outputs.should_pay == 'true'
         uses: ./
         with:
           recipient-wallet-address: ${{ steps.extract-wallet.outputs.wallet }}
-          amount: "0.1" # Default payment amount for contributions
-          network: "devnet" # Using devnet for safety, change to mainnet-beta for production
+          amount: ${{ steps.calculate-bounty.outputs.total_bounty }}
+          token: ${{ env.TOKEN_ADDRESS }}
+          network: ${{ env.SOLANA_NETWORK }}
         env:
           SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
 
-      - name: Process Results
+      - name: Process Payment Results
+        if: steps.calculate-bounty.outputs.should_pay == 'true'
         run: |
           if [[ "${{ steps.payout.outputs.success }}" == "true" ]]; then
             echo "✅ Successfully paid contributor!"
@@ -45,15 +221,38 @@ jobs:
             PR_NUMBER="${{ github.event.pull_request.number }}"
             PR_TITLE="${{ github.event.pull_request.title }}"
             PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+            ISSUES="${{ steps.extract-issues.outputs.issues }}"
+            BOUNTY_AMOUNT="${{ steps.calculate-bounty.outputs.total_bounty }}"
+            BOUNTY_DETAILS="${{ steps.calculate-bounty.outputs.bounty_details }}"
             
-            # Add a comment to the PR
-            gh pr comment "$PR_NUMBER" --body "🎉 Payment Successful!
-            
-            Thank you @$PR_AUTHOR for your contribution to \`$PR_TITLE\`!
-            
-            - Amount: 0.1 SOL
-            - Network: devnet
-            - Recipient: \`${{ steps.extract-wallet.outputs.wallet }}\`"
+            # Prepare issues text for the comment
+            ISSUES_LIST=""
+            if [[ "$ISSUES" != "none" ]]; then
+              ISSUES_LIST="${ISSUES//,/, #}"
+              if [[ "$ISSUES" != *","* ]]; then
+                ISSUES_LIST="#$ISSUES"
+              else
+                ISSUES_LIST="#$ISSUES_LIST"
+              fi
+              
+              # Add a comment to the PR
+              gh pr comment "$PR_NUMBER" --body "🎉 Payment Successful!
+              
+              Thank you @$PR_AUTHOR for your contribution in resolving $ISSUES_LIST!
+              
+              - Amount: $BOUNTY_AMOUNT \$MAIAR ($BOUNTY_DETAILS)
+              - Network: ${{ env.SOLANA_NETWORK }}
+              - Recipient: \`${{ steps.extract-wallet.outputs.wallet }}\`"
+            else
+              # Add a comment to the PR if no issues were found
+              gh pr comment "$PR_NUMBER" --body "🎉 Payment Successful!
+              
+              Thank you @$PR_AUTHOR for your contribution!
+              
+              - Amount: $BOUNTY_AMOUNT \$MAIAR ($BOUNTY_DETAILS)
+              - Network: ${{ env.SOLANA_NETWORK }}
+              - Recipient: \`${{ steps.extract-wallet.outputs.wallet }}\`"
+            fi
           else
             echo "❌ Payment failed:"
             echo "${{ steps.payout.outputs.error }}"
@@ -69,6 +268,37 @@ jobs:
             
             Please contact the repository administrators for assistance."
             exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: No Bounty Notification
+        if: steps.calculate-bounty.outputs.should_pay != 'true'
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+          ISSUES="${{ steps.extract-issues.outputs.issues }}"
+
+          # Prepare issues text for the comment
+          ISSUES_TEXT=""
+          if [[ "$ISSUES" != "none" ]]; then
+            ISSUES_LIST="${ISSUES//,/, #}"
+            if [[ "$ISSUES" != *","* ]]; then
+              ISSUES_LIST="#$ISSUES"
+            else
+              ISSUES_LIST="#$ISSUES_LIST"
+            fi
+            
+            # Add a comment to the PR
+            gh pr comment "$PR_NUMBER" --body "✅ PR Merged
+            
+            Thank you @$PR_AUTHOR for your contribution in resolving $ISSUES_LIST!"
+          else
+            # Add a comment to the PR if no issues were found
+            gh pr comment "$PR_NUMBER" --body "✅ PR Merged
+            
+            Thank you @$PR_AUTHOR for your contribution!"
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
