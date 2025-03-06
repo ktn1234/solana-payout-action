@@ -649,10 +649,14 @@ async function main(): Promise<void> {
 
     // Set success output
     setOutput("success", "true");
+
+    // Set transaction signature output
+    setOutput("transaction", signature);
   } catch (error) {
     // Set error output and success as false
     setOutput("success", "false");
     setOutput("error", error instanceof Error ? error.message : String(error));
+    setOutput("transaction", "");
 
     console.error(
       "❌ Error:",

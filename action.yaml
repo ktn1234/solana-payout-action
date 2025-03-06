@@ -23,6 +23,8 @@ outputs:
     description: "Whether the payment was successful"
   error:
     description: "The error that occurred during the payment"
+  transaction:
+    description: "The transaction signature for the successful payment"
 runs:
   using: "node20"
   main: "dist/index.js"
