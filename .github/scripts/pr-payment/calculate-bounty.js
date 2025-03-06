@@ -94,9 +94,7 @@ for (const issueNumber of issueArray) {
           `Adding ${bountyAmount} to total bounty for issue #${issueNumber}`
         );
         totalBounty += bountyAmount;
-        bountyDetails.push(
-          `Issue #${issueNumber} (https://github.com/${repo}/issues/${issueNumber}): ${bountyAmount}`
-        );
+        bountyDetails.push(`Issue #${issueNumber}: ${bountyAmount}`);
       } else {
         console.log(
           `No bounty amount found for issue #${issueNumber} (https://github.com/${repo}/issues/${issueNumber})`
