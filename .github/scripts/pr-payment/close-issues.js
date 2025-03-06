@@ -51,7 +51,11 @@ function createCommentBody(wasPaid) {
       `**Payment Details:**\n` +
       `- Amount: ${bountyAmount} $MAIAR (${bountyDetails})\n` +
       `- Network: ${network}\n` +
-      `- Recipient: ${recipientWallet}\n`;
+      `- Recipient: ${recipientWallet} ([View on Explorer](https://explorer.solana.com/address/${recipientWallet}${
+        network !== "mainnet-beta" ? `?cluster=${network}` : ""
+      }) | [View on Solscan](https://solscan.io/account/${recipientWallet}${
+        network !== "mainnet-beta" ? `?cluster=${network}` : ""
+      }))\n`;
 
     // Add transaction links if available
     if (transactionSignature) {

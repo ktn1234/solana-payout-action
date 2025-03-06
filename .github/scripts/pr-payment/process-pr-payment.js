@@ -38,7 +38,11 @@ if (success === "true") {
       `Thank you @${prAuthor} for your contribution in resolving ${issuesList}!\n\n` +
       `- Amount: ${bountyAmount} $MAIAR (${bountyDetails})\n` +
       `- Network: ${network}\n` +
-      `- Recipient: ${recipientWallet}\n` +
+      `- Recipient: ${recipientWallet} ([View on Explorer](https://explorer.solana.com/address/${recipientWallet}${
+        network !== "mainnet-beta" ? `?cluster=${network}` : ""
+      }) | [View on Solscan](https://solscan.io/account/${recipientWallet}${
+        network !== "mainnet-beta" ? `?cluster=${network}` : ""
+      }))\n` +
       `- Transaction: [View on Explorer](https://explorer.solana.com/tx/${transaction}${
         network !== "mainnet-beta" ? `?cluster=${network}` : ""
       }) | [View on Solscan](https://solscan.io/tx/${transaction}${
@@ -78,7 +82,11 @@ if (success === "true") {
       `Thank you @${prAuthor} for your contribution!\n\n` +
       `- Amount: ${bountyAmount} $MAIAR (${bountyDetails})\n` +
       `- Network: ${network}\n` +
-      `- Recipient: ${recipientWallet}\n` +
+      `- Recipient: ${recipientWallet} ([View on Explorer](https://explorer.solana.com/address/${recipientWallet}${
+        network !== "mainnet-beta" ? `?cluster=${network}` : ""
+      }) | [View on Solscan](https://solscan.io/account/${recipientWallet}${
+        network !== "mainnet-beta" ? `?cluster=${network}` : ""
+      }))\n` +
       `- Transaction: [View on Explorer](https://explorer.solana.com/tx/${transaction}${
         network !== "mainnet-beta" ? `?cluster=${network}` : ""
       }) | [View on Solscan](https://solscan.io/tx/${transaction}${
