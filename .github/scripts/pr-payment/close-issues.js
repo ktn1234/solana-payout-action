@@ -20,10 +20,12 @@ const bountyDetails = process.env.BOUNTY_DETAILS;
 const network = process.env.SOLANA_NETWORK;
 const recipientWallet = process.env.RECIPIENT_WALLET || "";
 const transactionSignature = process.env.TRANSACTION_SIGNATURE;
+const alreadyPaid = process.env.ALREADY_PAID === "true";
 
 // Determine if a payment was made
 const paymentWasMade =
-  payoutSuccess && bountyAmount && parseFloat(bountyAmount) > 0;
+  (payoutSuccess && bountyAmount && parseFloat(bountyAmount) > 0) ||
+  alreadyPaid;
 
 // Log payment status
 console.log(
@@ -31,11 +33,13 @@ console.log(
     paymentWasMade ? "Payment was made" : "No payment was made"
   }`
 );
-if (paymentWasMade) {
+if (paymentWasMade && !alreadyPaid) {
   console.log(`Payment amount: ${bountyAmount} $MAIAR`);
   console.log(
     `Transaction signature: ${transactionSignature || "Not available"}`
   );
+} else if (alreadyPaid) {
+  console.log("Issues were already paid in a previous PR");
 }
 
 /**
@@ -45,6 +49,15 @@ if (paymentWasMade) {
  */
 function createCommentBody(wasPaid) {
   if (wasPaid) {
+    // If already paid, use a different message
+    if (alreadyPaid) {
+      return (
+        `✅ This issue was resolved by PR #${prNumber} from @${prAuthor}.\n\n` +
+        `Note: This issue was already paid in a previous PR.\n\n` +
+        `See the full PR here: https://github.com/${repo}/pull/${prNumber}`
+      );
+    }
+
     // Include payment information if a payment was made
     let comment =
       `🎉 This issue was resolved by PR #${prNumber} from @${prAuthor} and has been paid a bounty!\n\n` +

@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
 
       # Step Outputs:
-      # - issues
+      # - issues (comma separated list of issue numbers) - "1, 2, 3"
       - name: Extract Issue Numbers from CODEOWNER Comments
         id: extract-issues
         run: node .github/scripts/pr-payment/extract-issues.js
@@ -28,11 +28,23 @@ jobs:
           REPO: ${{ github.repository }}
 
       # Step Outputs:
-      # - total_bounty
-      # - bounty_details
-      # - should_pay
+      # - already_paid (boolean) - true or false
+      - name: Check Payment Status
+        id: check-payment
+        if: steps.extract-issues.outputs.issues != 'none'
+        run: node .github/scripts/pr-payment/check-payment-status.js
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUES: ${{ steps.extract-issues.outputs.issues }}
+          REPO: ${{ github.repository }}
+
+      # Step Outputs:
+      # - total_bounty (number) - 100
+      # - bounty_details (comma separated list of bounty details) - "Issue #1: 100, Issue #2: 200"
+      # - should_pay (boolean) - true or false (true if the bounty amount is greater than 0)
       - name: Calculate Bounty Amount
         id: calculate-bounty
+        if: steps.extract-issues.outputs.issues != 'none' && steps.check-payment.outputs.already_paid != 'true'
         run: node .github/scripts/pr-payment/calculate-bounty.js
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -40,10 +52,10 @@ jobs:
           ISSUES: ${{ steps.extract-issues.outputs.issues }}
 
       # Step Outputs:
-      # - wallet
+      # - wallet (string) - "0x1234567890123456789012345678901234567890"
       - name: Extract Wallet Address
         id: extract-wallet
-        if: steps.calculate-bounty.outputs.should_pay == 'true'
+        if: steps.calculate-bounty.outputs.should_pay == 'true' && steps.check-payment.outputs.already_paid != 'true'
         run: node .github/scripts/pr-payment/extract-wallet.js
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -52,12 +64,12 @@ jobs:
           REPO: ${{ github.repository }}
 
       # Step Outputs:
-      # - success
-      # - error
-      # - transaction
+      # - success (boolean) - true or false (true if the payout was successful)
+      # - error (string) - "Error: Insufficient balance" or ""
+      # - transaction (string) - "1234567890123456789012345678901234567890" or ""
       - name: Pay Contributor
         id: payout
-        if: steps.calculate-bounty.outputs.should_pay == 'true'
+        if: steps.calculate-bounty.outputs.should_pay == 'true' && steps.check-payment.outputs.already_paid != 'true'
         uses: ./
         with:
           recipient-wallet-address: ${{ steps.extract-wallet.outputs.wallet }}
@@ -68,7 +80,7 @@ jobs:
           SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
 
       - name: Process PR Payment Results
-        if: steps.calculate-bounty.outputs.should_pay == 'true'
+        if: steps.calculate-bounty.outputs.should_pay == 'true' && steps.check-payment.outputs.already_paid != 'true'
         run: node .github/scripts/pr-payment/process-pr-payment.js
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -83,8 +95,16 @@ jobs:
           SOLANA_NETWORK: ${{ env.SOLANA_NETWORK }}
           RECIPIENT_WALLET: ${{ steps.extract-wallet.outputs.wallet }}
 
+      - name: Skip Payment Notification
+        if: steps.check-payment.outputs.already_paid == 'true'
+        run: |
+          echo "⚠️ Payment skipped because at least one issue has already been paid"
+          gh pr comment ${{ github.event.pull_request.number }} --body "⚠️ **Payment Skipped**\n\nPayment for this PR has been skipped because at least one of the issues has already been paid in a previous PR.\n\nPlease contact the repository administrators if you believe this is an error."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Process PR
-        if: steps.calculate-bounty.outputs.should_pay != 'true'
+        if: steps.calculate-bounty.outputs.should_pay != 'true' && steps.check-payment.outputs.already_paid != 'true'
         run: node .github/scripts/pr-payment/process-pr.js
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -109,3 +129,4 @@ jobs:
           BOUNTY_DETAILS: ${{ steps.calculate-bounty.outputs.bounty_details || '' }}
           SOLANA_NETWORK: ${{ env.SOLANA_NETWORK }}
           RECIPIENT_WALLET: ${{ steps.extract-wallet.outputs.wallet || '' }}
+          ALREADY_PAID: ${{ steps.check-payment.outputs.already_paid || 'false' }}
