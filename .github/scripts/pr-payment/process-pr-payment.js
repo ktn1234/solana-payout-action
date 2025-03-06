@@ -1,4 +1,4 @@
-const { execSync } = require("child_process");
+const { spawnSync } = require("child_process");
 
 // Get inputs from environment variables
 const success = process.env.PAYOUT_SUCCESS;
@@ -10,7 +10,10 @@ const issues = process.env.ISSUES;
 const bountyAmount = process.env.BOUNTY_AMOUNT;
 const bountyDetails = process.env.BOUNTY_DETAILS;
 const network = process.env.SOLANA_NETWORK;
-const recipientWallet = process.env.RECIPIENT_WALLET;
+const recipientWallet = process.env.RECIPIENT_WALLET || "";
+
+// Log the wallet address to help with debugging
+console.log(`Processing payment for wallet: ${recipientWallet}`);
 
 if (success === "true") {
   console.log("✅ Successfully paid contributor!");
@@ -35,15 +38,16 @@ if (success === "true") {
       `Thank you @${prAuthor} for your contribution in resolving ${issuesList}!\n\n` +
       `- Amount: ${bountyAmount} $MAIAR (${bountyDetails})\n` +
       `- Network: ${network}\n` +
-      `- Recipient: \`${recipientWallet}\`\n` +
+      `- Recipient: ${recipientWallet}\n` +
       `- Transaction: [View on Explorer](https://explorer.solana.com/tx/${transaction}${
         network !== "mainnet-beta" ? `?cluster=${network}` : ""
       }) | [View on Solscan](https://solscan.io/tx/${transaction}${
         network !== "mainnet-beta" ? `?cluster=${network}` : ""
       })`;
 
-    execSync(`gh pr comment "${prNumber}" --body "${successComment}"`, {
-      encoding: "utf8",
+    // Use spawnSync to avoid shell interpretation issues
+    spawnSync("gh", ["pr", "comment", prNumber, "--body", successComment], {
+      stdio: "inherit",
     });
   } else {
     // Add a comment to the PR without issues
@@ -52,15 +56,16 @@ if (success === "true") {
       `Thank you @${prAuthor} for your contribution!\n\n` +
       `- Amount: ${bountyAmount} $MAIAR (${bountyDetails})\n` +
       `- Network: ${network}\n` +
-      `- Recipient: \`${recipientWallet}\`\n` +
+      `- Recipient: ${recipientWallet}\n` +
       `- Transaction: [View on Explorer](https://explorer.solana.com/tx/${transaction}${
         network !== "mainnet-beta" ? `?cluster=${network}` : ""
       }) | [View on Solscan](https://solscan.io/tx/${transaction}${
         network !== "mainnet-beta" ? `?cluster=${network}` : ""
       })`;
 
-    execSync(`gh pr comment "${prNumber}" --body "${successComment}"`, {
-      encoding: "utf8",
+    // Use spawnSync to avoid shell interpretation issues
+    spawnSync("gh", ["pr", "comment", prNumber, "--body", successComment], {
+      stdio: "inherit",
     });
   }
 } else {
@@ -76,8 +81,9 @@ if (success === "true") {
     "```\n\n" +
     "Please contact the repository administrators for assistance.";
 
-  execSync(`gh pr comment "${prNumber}" --body "${failureComment}"`, {
-    encoding: "utf8",
+  // Use spawnSync to avoid shell interpretation issues
+  spawnSync("gh", ["pr", "comment", prNumber, "--body", failureComment], {
+    stdio: "inherit",
   });
   process.exit(1);
 }

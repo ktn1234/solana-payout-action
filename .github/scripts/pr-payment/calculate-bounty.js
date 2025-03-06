@@ -39,7 +39,9 @@ let foundBounty = false;
 const issueArray = issues.split(",");
 
 for (const issueNumber of issueArray) {
-  console.log(`Processing issue #${issueNumber}`);
+  console.log(
+    `Processing issue #${issueNumber} (https://github.com/${repo}/issues/${issueNumber})`
+  );
 
   try {
     // Get issue details
@@ -78,7 +80,7 @@ for (const issueNumber of issueArray) {
           if (bountyMatch && bountyMatch[1]) {
             const amount = parseFloat(bountyMatch[1]);
             console.log(
-              `Found bounty amount: ${amount} for issue #${issueNumber}`
+              `Found bounty amount: ${amount} for issue #${issueNumber} (https://github.com/${repo}/issues/${issueNumber})`
             );
             bountyAmount = amount;
             foundBounty = true;
@@ -88,17 +90,27 @@ for (const issueNumber of issueArray) {
       }
 
       if (bountyAmount !== null) {
-        console.log(`Adding ${bountyAmount} to total bounty`);
+        console.log(
+          `Adding ${bountyAmount} to total bounty for issue #${issueNumber}`
+        );
         totalBounty += bountyAmount;
-        bountyDetails.push(`Issue #${issueNumber}: ${bountyAmount}`);
+        bountyDetails.push(
+          `Issue #${issueNumber} (https://github.com/${repo}/issues/${issueNumber}): ${bountyAmount}`
+        );
       } else {
-        console.log(`No bounty amount found for issue #${issueNumber}`);
+        console.log(
+          `No bounty amount found for issue #${issueNumber} (https://github.com/${repo}/issues/${issueNumber})`
+        );
       }
     } else {
-      console.log(`Issue #${issueNumber} does not have bounty label`);
+      console.log(
+        `Issue #${issueNumber} does not have bounty label (https://github.com/${repo}/issues/${issueNumber})`
+      );
     }
   } catch (error) {
-    console.log(`Error processing issue #${issueNumber}: ${error.message}`);
+    console.log(
+      `Error processing issue #${issueNumber}: ${error.message} (https://github.com/${repo}/issues/${issueNumber})`
+    );
   }
 }
 

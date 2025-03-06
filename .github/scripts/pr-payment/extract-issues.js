@@ -56,9 +56,20 @@ for (const comment of comments) {
 const issuesCsv = issueNumbers.length > 0 ? issueNumbers.join(",") : "none";
 
 if (issuesCsv === "none") {
-  console.log("⚠️ No issues found in CODEOWNER comments");
+  console.log(
+    "⚠️ No issues found that this PR closes (based on CODEOWNER comments)"
+  );
 } else {
-  console.log(`Found issues: ${issuesCsv}`);
+  console.log(
+    `Found ${issueNumbers.length} issue${
+      issueNumbers.length !== 1 ? "s" : ""
+    } that PR #${prNumber} closes (from CODEOWNER comments):`
+  );
+  issueNumbers.forEach((issueNumber) => {
+    console.log(
+      `- Issue #${issueNumber} (https://github.com/${repo}/issues/${issueNumber})`
+    );
+  });
 }
 
 // Set output for GitHub Actions

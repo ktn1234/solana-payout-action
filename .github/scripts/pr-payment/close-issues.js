@@ -1,6 +1,4 @@
-#!/usr/bin/env node
-
-const { execSync } = require("child_process");
+const { execSync, spawnSync } = require("child_process");
 
 /**
  * Script to close issues that were identified in CODEOWNER comments
@@ -20,8 +18,60 @@ const payoutSuccess = process.env.PAYOUT_SUCCESS === "true";
 const bountyAmount = process.env.BOUNTY_AMOUNT;
 const bountyDetails = process.env.BOUNTY_DETAILS;
 const network = process.env.SOLANA_NETWORK;
-const recipientWallet = process.env.RECIPIENT_WALLET;
+const recipientWallet = process.env.RECIPIENT_WALLET || "";
 const transactionSignature = process.env.TRANSACTION_SIGNATURE;
+
+// Determine if a payment was made
+const paymentWasMade =
+  payoutSuccess && bountyAmount && parseFloat(bountyAmount) > 0;
+
+// Log payment status
+console.log(
+  `Payment status: ${
+    paymentWasMade ? "Payment was made" : "No payment was made"
+  }`
+);
+if (paymentWasMade) {
+  console.log(`Payment amount: ${bountyAmount} $MAIAR`);
+  console.log(
+    `Transaction signature: ${transactionSignature || "Not available"}`
+  );
+}
+
+/**
+ * Creates a comment body for an issue based on whether a payment was made
+ * @param {boolean} wasPaid - Whether a payment was made for this issue
+ * @returns {string} The formatted comment body
+ */
+function createCommentBody(wasPaid) {
+  if (wasPaid) {
+    // Include payment information if a payment was made
+    let comment =
+      `🎉 This issue was resolved by PR #${prNumber} from @${prAuthor} and has been paid a bounty!\n\n` +
+      `**Payment Details:**\n` +
+      `- Amount: ${bountyAmount} $MAIAR (${bountyDetails})\n` +
+      `- Network: ${network}\n` +
+      `- Recipient: ${recipientWallet}\n`;
+
+    // Add transaction links if available
+    if (transactionSignature) {
+      comment += `- Transaction: [View on Explorer](https://explorer.solana.com/tx/${transactionSignature}${
+        network !== "mainnet-beta" ? `?cluster=${network}` : ""
+      }) | [View on Solscan](https://solscan.io/tx/${transactionSignature}${
+        network !== "mainnet-beta" ? `?cluster=${network}` : ""
+      })\n\n`;
+    }
+
+    comment += `See the full PR here: https://github.com/${repo}/pull/${prNumber}`;
+    return comment;
+  } else {
+    // Standard comment without payment info
+    return (
+      `✅ This issue was resolved by PR #${prNumber} from @${prAuthor}.\n\n` +
+      `See the full PR here: https://github.com/${repo}/pull/${prNumber}`
+    );
+  }
+}
 
 // Exit early if no issues to process
 if (issues === "none") {
@@ -32,10 +82,17 @@ if (issues === "none") {
 // Process each issue
 const issueNumbers = issues.split(",");
 console.log(
-  `Found ${
-    issueNumbers.length
-  } issues to check and close if needed: ${issueNumbers.join(", ")}`
+  `Found ${issueNumbers.length} issue${
+    issueNumbers.length !== 1 ? "s" : ""
+  } to close from PR #${prNumber}:`
 );
+
+// Log each issue with its link
+issueNumbers.forEach((issueNumber) => {
+  console.log(
+    `- Issue #${issueNumber} (https://github.com/${repo}/issues/${issueNumber})`
+  );
+});
 
 // Track results for summary
 const results = {
@@ -71,7 +128,36 @@ for (const issueNumber of issueNumbers) {
     }
 
     if (issueData.state === "closed") {
-      console.log(`Issue #${issueNumber} is already closed. Skipping.`);
+      console.log(
+        `Issue #${issueNumber} is already closed. Adding comment anyway.`
+      );
+
+      // Create a comment mentioning the PR that resolved this issue, even though it's already closed
+      let commentBody = createCommentBody(paymentWasMade);
+
+      try {
+        // Use spawnSync to avoid shell interpretation issues with special characters
+        spawnSync(
+          "gh",
+          [
+            "api",
+            `repos/${repo}/issues/${issueNumber}/comments`,
+            "-X",
+            "POST",
+            "-f",
+            `body=${commentBody}`,
+          ],
+          {
+            stdio: "inherit",
+          }
+        );
+        console.log(`Added comment to already closed issue #${issueNumber}`);
+      } catch (commentError) {
+        console.error(
+          `Error adding comment to issue #${issueNumber}: ${commentError.message}`
+        );
+      }
+
       results.alreadyClosed.push(issueNumber);
       continue;
     }
@@ -80,38 +166,23 @@ for (const issueNumber of issueNumbers) {
     console.log(`Closing issue #${issueNumber}...`);
 
     // Create a comment mentioning the PR that resolved this issue
-    let commentBody;
-
-    if (payoutSuccess && bountyAmount) {
-      // Include payment information if a payment was made
-      commentBody =
-        `🎉 This issue was resolved by PR #${prNumber} from @${prAuthor} and has been paid a bounty!\n\n` +
-        `**Payment Details:**\n` +
-        `- Amount: ${bountyAmount} $MAIAR (${bountyDetails})\n` +
-        `- Network: ${network}\n` +
-        `- Recipient: \`${recipientWallet}\`\n`;
-
-      // Add transaction links if available
-      if (transactionSignature) {
-        commentBody += `- Transaction: [View on Explorer](https://explorer.solana.com/tx/${transactionSignature}${
-          network !== "mainnet-beta" ? `?cluster=${network}` : ""
-        }) | [View on Solscan](https://solscan.io/tx/${transactionSignature}${
-          network !== "mainnet-beta" ? `?cluster=${network}` : ""
-        })\n\n`;
-      }
-
-      commentBody += `See the full PR here: https://github.com/${repo}/pull/${prNumber}`;
-    } else {
-      // Standard comment without payment info
-      commentBody =
-        `✅ This issue was resolved by PR #${prNumber} from @${prAuthor} and is being automatically closed.\n\n` +
-        `See the full PR here: https://github.com/${repo}/pull/${prNumber}`;
-    }
+    let commentBody = createCommentBody(paymentWasMade);
 
     try {
-      execSync(
-        `gh api repos/${repo}/issues/${issueNumber}/comments -X POST -f body='${commentBody}'`,
-        { encoding: "utf8" }
+      // Use spawnSync to avoid shell interpretation issues with special characters
+      spawnSync(
+        "gh",
+        [
+          "api",
+          `repos/${repo}/issues/${issueNumber}/comments`,
+          "-X",
+          "POST",
+          "-f",
+          `body=${commentBody}`,
+        ],
+        {
+          stdio: "inherit",
+        }
       );
     } catch (commentError) {
       console.error(
@@ -122,9 +193,20 @@ for (const issueNumber of issueNumbers) {
 
     // Close the issue
     try {
-      execSync(
-        `gh api repos/${repo}/issues/${issueNumber} -X PATCH -f state=closed`,
-        { encoding: "utf8" }
+      // Use spawnSync to avoid shell interpretation issues
+      spawnSync(
+        "gh",
+        [
+          "api",
+          `repos/${repo}/issues/${issueNumber}`,
+          "-X",
+          "PATCH",
+          "-f",
+          "state=closed",
+        ],
+        {
+          stdio: "inherit",
+        }
       );
       console.log(
         `Successfully closed issue #${issueNumber} with reference to PR #${prNumber}`
@@ -150,24 +232,33 @@ for (const issueNumber of issueNumbers) {
 }
 
 // Print summary
-console.log("\n--- Issue Closing Summary ---");
+console.log("\n--- Issue Closing Summary for PR #" + prNumber + " ---");
 console.log(`Total issues processed: ${issueNumbers.length}`);
-console.log(
-  `Already closed: ${
-    results.alreadyClosed.length
-  } (${results.alreadyClosed.join(", ")})`
-);
-console.log(
-  `Successfully closed: ${
-    results.successfullyClosed.length
-  } (${results.successfullyClosed.join(", ")})`
-);
-console.log(`Failed to process: ${results.failed.length}`);
+
+if (results.alreadyClosed.length > 0) {
+  console.log(`Already closed (${results.alreadyClosed.length}):`);
+  results.alreadyClosed.forEach((issueNumber) => {
+    console.log(
+      `  - Issue #${issueNumber} (https://github.com/${repo}/issues/${issueNumber})`
+    );
+  });
+}
+
+if (results.successfullyClosed.length > 0) {
+  console.log(`Successfully closed (${results.successfullyClosed.length}):`);
+  results.successfullyClosed.forEach((issueNumber) => {
+    console.log(
+      `  - Issue #${issueNumber} (https://github.com/${repo}/issues/${issueNumber})`
+    );
+  });
+}
 
 if (results.failed.length > 0) {
-  console.log("Failed issues:");
+  console.log(`Failed to process (${results.failed.length}):`);
   results.failed.forEach((issue) => {
-    console.log(`  - #${issue.number}: ${issue.reason}`);
+    console.log(
+      `  - Issue #${issue.number}: ${issue.reason} (https://github.com/${repo}/issues/${issue.number})`
+    );
   });
 }
 
