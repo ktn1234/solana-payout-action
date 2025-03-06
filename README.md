@@ -9,7 +9,8 @@ A GitHub Action to automatically send Solana payments to specified wallet addres
 - Validates wallet addresses and balances before transactions
   - Checks for sufficient SOL balance to cover transaction fees (0.1 SOL buffer)
   - Verifies sufficient token balance for token transfers
-  - Ensures sender has enough SOL to create token accounts if recipient doesn't have one (0.003 SOL buffer)
+  - Automatically creates token accounts for sender and recipient if they don't exist
+  - Ensures sender has enough SOL to create token accounts if needed (0.003 SOL per account)
 - Comprehensive error handling and validation
 
 ## Usage
@@ -68,12 +69,12 @@ A GitHub Action to automatically send Solana payments to specified wallet addres
    - You can export this from wallets like Phantom, Solflare, or Backpack
    - No other formats are supported
 3. Ensure the sender wallet has sufficient SOL for the transactions:
-   - For SOL transfers: At least 0.103 SOL (0.1 SOL buffer + 0.003 SOL for fees) plus the amount you want to send
-   - For SPL token transfers: At least 0.103 SOL for fees and potential token account creation, plus the token amount
+   - For SOL transfers: At least 0.1 SOL buffer for transaction fees, plus the amount you want to send
+   - For SPL token transfers: At least 0.1 SOL buffer for transaction fees, plus up to 0.006 SOL for token account creation (0.003 SOL per account for sender and recipient), plus the token amount
 4. If sending SPL tokens, ensure the sender wallet has the tokens and SOL for transaction fees
 
 > [!IMPORTANT]
-> The action requires a minimum of 0.103 SOL in the sender wallet to cover transaction fees and potential token account creation, regardless of the amount being transferred.
+> The action requires a minimum buffer of 0.1 SOL in the sender wallet to cover transaction fees for SOL transfers. For SPL token transfers, it requires a 0.1 SOL buffer plus up to 0.006 SOL for token account creation (0.003 SOL per account if needed for both sender and recipient). Token accounts will be automatically created if they don't exist, and the action will automatically calculate the required SOL based on which accounts need to be created.
 
 ## Example Workflow
 

@@ -12,8 +12,8 @@ import {
   getOrCreateAssociatedTokenAccount,
   createTransferInstruction,
   getAccount,
-  TOKEN_PROGRAM_ID,
   getMint,
+  getAssociatedTokenAddress,
 } from "@solana/spl-token";
 import bs58 from "bs58";
 
@@ -38,295 +38,56 @@ const TRANSACTION_FEE_BUFFER = 0.1 * LAMPORTS_PER_SOL; // 0.1 SOL buffer for fee
 
 // Cost to create a token account (rent exemption + transaction fee)
 // This is approximately 0.00203928 SOL as of early 2023
+// We round up to 0.003 SOL to provide a small buffer
 const TOKEN_ACCOUNT_CREATION_COST = 0.003 * LAMPORTS_PER_SOL; // 0.003 SOL for token account creation
 
-async function validateWalletAddress(
-  connection: Connection,
-  address: string,
-  type: string = "wallet",
-  network: string = "unknown"
-): Promise<PublicKey> {
-  try {
-    const pubKey = new PublicKey(address);
+// Buffer requirements summary:
+// - SOL transfers: 0.1 SOL buffer for transaction fees
+// - SPL token transfers: 0.1 SOL buffer + up to 0.006 SOL for token account creation
+//   (0.003 SOL per account if needed for both sender and recipient)
 
-    // Check if address is valid Solana public key format
-    if (!PublicKey.isOnCurve(pubKey)) {
-      throw new Error(`Invalid ${type} wallet address format: ${address}`);
-    }
-
-    // For basic SOL accounts, we should check balance instead of account info
-    const balance = await connection.getBalance(pubKey);
-    const solBalance = balance / LAMPORTS_PER_SOL;
-    console.log(
-      `${type} wallet balance: ${solBalance.toLocaleString()} SOL (${balance.toString()} lamports)`
-    );
-
-    // We don't throw if balance is 0, just log it
-    if (balance === 0) {
-      console.log(
-        `Warning: ${type} wallet has 0 balance on ${network} network`
-      );
-    }
-
-    return pubKey;
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes("Invalid public key input")
-    ) {
-      throw new Error(`Invalid ${type} wallet address format: ${address}`);
-    }
-    throw error;
-  }
+interface TokenInfo {
+  mint: PublicKey;
+  supply: bigint;
+  decimals: number;
 }
 
-async function validateSenderBalance(
-  connection: Connection,
-  senderPubKey: PublicKey,
-  requiredAmount: number,
-  network: string,
-  mayNeedTokenAccount: boolean = false
-): Promise<number> {
-  try {
-    const balance = await connection.getBalance(senderPubKey);
-
-    // Calculate total required with a conservative fee buffer
-    let totalRequired = requiredAmount + TRANSACTION_FEE_BUFFER;
-
-    // Add token account creation cost if needed
-    if (mayNeedTokenAccount) {
-      totalRequired += TOKEN_ACCOUNT_CREATION_COST;
-      console.log(
-        `Including potential token account creation cost: ${
-          TOKEN_ACCOUNT_CREATION_COST / LAMPORTS_PER_SOL
-        } SOL`
-      );
-    }
-
-    // Format for human-readable display
-    const solBalance = balance / LAMPORTS_PER_SOL;
-    const solRequired = requiredAmount / LAMPORTS_PER_SOL;
-    const feeBuffer = TRANSACTION_FEE_BUFFER / LAMPORTS_PER_SOL;
-    const solTotalRequired = totalRequired / LAMPORTS_PER_SOL;
-
-    console.log(
-      `Current SOL balance: ${solBalance.toLocaleString()} SOL (${balance.toString()} lamports)`
-    );
-
-    if (requiredAmount > 0) {
-      console.log(
-        `Required amount: ${solRequired.toLocaleString()} SOL (${requiredAmount.toString()} lamports)`
-      );
-    }
-
-    console.log(
-      `Fee buffer: ${feeBuffer.toLocaleString()} SOL (${TRANSACTION_FEE_BUFFER.toString()} lamports)`
-    );
-    console.log(
-      `Total required: ${solTotalRequired.toLocaleString()} SOL (${totalRequired.toString()} lamports)`
-    );
-
-    if (balance < totalRequired) {
-      throw new Error(
-        `Insufficient funds in sender wallet on ${network} network. ` +
-          `Balance: ${solBalance.toLocaleString()} SOL, ` +
-          `Required: ${solTotalRequired.toLocaleString()} SOL ` +
-          `(including ${feeBuffer.toLocaleString()} SOL buffer for transaction fees${
-            mayNeedTokenAccount ? ` and potential token account creation` : ""
-          })`
-      );
-    }
-
-    return balance;
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes("Insufficient funds")
-    ) {
-      throw error;
-    }
-    throw new Error(
-      `Failed to check sender wallet balance: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
-  }
+interface SenderTokenInfo {
+  balance: bigint;
+  hasTokenAccount: boolean;
 }
 
-async function validateSenderTokenBalance(
-  connection: Connection,
-  senderPubKey: PublicKey,
-  tokenMint: PublicKey,
-  requiredAmount: number,
-  network: string
-): Promise<bigint> {
-  try {
-    // Get the associated token account for the sender
-    const tokenAccount = await getOrCreateAssociatedTokenAccount(
-      connection,
-      Keypair.generate(), // Dummy keypair for read-only operation
-      tokenMint,
-      senderPubKey,
-      false // Don't create if it doesn't exist
-    );
+/**
+ * SolanaPayoutService - A class to handle Solana payments
+ * Encapsulates all the business logic for sending SOL or SPL tokens
+ */
+class SolanaPayoutService {
+  private connection: Connection;
+  private senderKeypair: Keypair;
+  private senderPubKey: PublicKey;
+  private recipientPubKey: PublicKey;
+  private amount: number;
+  private network: string;
+  private token: string;
+  private isTokenTransfer: boolean;
+  private tokenInfo: TokenInfo | null = null;
 
-    if (!tokenAccount) {
-      throw new Error(
-        `No token account found for token ${tokenMint.toString()} in sender wallet on ${network} network`
-      );
-    }
-
-    // Get the token account info
-    const accountInfo = await getAccount(connection, tokenAccount.address);
-    const balance = accountInfo.amount;
-
-    // Get token mint info to determine decimals
-    const mintInfo = await getMint(connection, tokenMint);
-    const decimals = mintInfo.decimals;
-    console.log(`Token decimals: ${decimals}`);
-
-    // Convert required amount to token amount considering decimals
-    const requiredTokenAmount = BigInt(
-      Math.floor(requiredAmount * 10 ** decimals)
-    );
-
-    // Format balances for human-readable display
-    const balanceFormatted = Number(balance) / 10 ** decimals;
-    const requiredFormatted = requiredAmount;
-
-    console.log(
-      `Required amount: ${requiredFormatted} tokens (${requiredTokenAmount.toString()} raw)`
-    );
-    console.log(
-      `Current balance: ${balanceFormatted} tokens (${balance.toString()} raw)`
-    );
-
-    if (balance < requiredTokenAmount) {
-      throw new Error(
-        `Insufficient token balance in sender wallet on ${network} network. ` +
-          `Balance: ${balanceFormatted} tokens, ` +
-          `Required: ${requiredFormatted} tokens`
-      );
-    }
-
-    return balance;
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      (error.message.includes("Insufficient token balance") ||
-        error.message.includes("No token account found"))
-    ) {
-      throw error;
-    }
-    throw new Error(
-      `Failed to check sender token balance: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
-  }
-}
-
-async function validateTokenAddress(
-  connection: Connection,
-  tokenAddress: string,
-  network: string = "unknown"
-): Promise<{ mint: PublicKey; supply: bigint; decimals: number }> {
-  try {
-    console.log(
-      `Validating token address ${tokenAddress} on ${network} network...`
-    );
-
-    // Check if address is a valid Solana public key
-    const tokenMint = new PublicKey(tokenAddress);
-    if (!PublicKey.isOnCurve(tokenMint)) {
-      throw new Error(`Invalid token address format: ${tokenAddress}`);
-    }
-
-    // Get token mint info to verify it's a valid SPL token
-    try {
-      const mintInfo = await getMint(connection, tokenMint);
-
-      console.log(`✓ Valid SPL token found`);
-
-      // Calculate human-readable supply
-      const decimals = mintInfo.decimals;
-      const rawSupply = mintInfo.supply;
-      const humanReadableSupply = Number(rawSupply) / Math.pow(10, decimals);
-
-      console.log(`Token decimals: ${decimals}`);
-      console.log(
-        `Token supply: ${humanReadableSupply.toLocaleString()} tokens (${rawSupply.toString()} raw)`
-      );
-
-      if (mintInfo.mintAuthority) {
-        console.log(`Mint authority: ${mintInfo.mintAuthority.toString()}`);
-      } else {
-        console.log(`Mint authority: None (fixed supply)`);
-      }
-
-      if (mintInfo.freezeAuthority) {
-        console.log(`Freeze authority: ${mintInfo.freezeAuthority.toString()}`);
-      } else {
-        console.log(`Freeze authority: None (non-freezable)`);
-      }
-
-      return {
-        mint: tokenMint,
-        supply: mintInfo.supply,
-        decimals: mintInfo.decimals,
-      };
-    } catch (error) {
-      throw new Error(
-        `Invalid SPL token: ${tokenAddress}. Error: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    }
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("Invalid SPL token")) {
-      throw error;
-    }
-    throw new Error(
-      `Failed to validate token address: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
-  }
-}
-
-async function main(): Promise<void> {
-  try {
-    console.log("Starting Solana payment process...");
-
-    // Get sender wallet secret from environment variables
-    const SENDER_WALLET_SECRET = process.env.SENDER_WALLET_SECRET;
-    if (!SENDER_WALLET_SECRET) {
-      throw new Error(
-        "Environment variable SENDER_WALLET_SECRET is not set, please set it in the repository secrets"
-      );
-    }
-    console.log("✓ Sender wallet secret loaded");
-
-    // Get inputs from the GitHub Action
-    const recipientWalletAddress = getInput("recipient-wallet-address", {
-      required: true,
-    });
-    const amount = parseFloat(getInput("amount", { required: true }));
-    const network = getInput("network", { required: false }) || "mainnet-beta";
-    const token = getInput("token", { required: true });
-
-    console.log(`Network: ${network}`);
-
-    // Determine if this is a SOL or token transfer
-    const isTokenTransfer = token.toUpperCase() !== "SOL";
-    if (isTokenTransfer) {
-      console.log(`Token transfer: ${token}`);
-      console.log(`Amount to send: ${amount} tokens`);
-    } else {
-      console.log(`Amount to send: ${amount} SOL`);
-    }
-
-    // Validate inputs and connect
+  /**
+   * Constructor for SolanaPayoutService
+   * @param senderWalletSecret - The sender's wallet private key in base58 format
+   * @param recipientWalletAddress - The recipient's wallet address
+   * @param amount - The amount to send
+   * @param token - The token to send (SOL or SPL token address)
+   * @param network - The Solana network to use
+   */
+  constructor(
+    senderWalletSecret: string,
+    recipientWalletAddress: string,
+    amount: number,
+    token: string,
+    network: string
+  ) {
+    // Validate inputs
     if (isNaN(amount) || amount <= 0) {
       throw new Error(`Amount must be a positive number`);
     }
@@ -339,336 +100,728 @@ async function main(): Promise<void> {
       );
     }
 
-    // Connect to Solana network
-    console.log(`Connecting to Solana ${network}...`);
-    const connection = new Connection(NETWORK_URLS[network]);
-    console.log("✓ Connected to network");
-
-    // Validate token first if it's a token transfer
-    let tokenInfo;
-    if (isTokenTransfer) {
-      console.log("Validating token address...");
-      tokenInfo = await validateTokenAddress(connection, token, network);
-      console.log("✓ Token address validated");
-    }
+    // Initialize properties
+    this.amount = amount;
+    this.token = token;
+    this.network = network;
+    this.isTokenTransfer = token.toUpperCase() !== "SOL";
+    this.connection = new Connection(NETWORK_URLS[network]);
 
     // Create sender keypair
-    let senderKeypair: Keypair;
     try {
-      // Parse the private key as a base58 encoded string (standard format from Solana wallets)
-      const privateKeyBytes = bs58.decode(SENDER_WALLET_SECRET);
-      senderKeypair = Keypair.fromSecretKey(privateKeyBytes);
+      const privateKeyBytes = bs58.decode(senderWalletSecret);
+      this.senderKeypair = Keypair.fromSecretKey(privateKeyBytes);
+      this.senderPubKey = this.senderKeypair.publicKey;
     } catch (error: any) {
       throw new Error(
-        "Invalid SENDER_WALLET_SECRET format. Please provide a valid base58 encoded private key."
+        "Invalid wallet secret format. Please provide a valid base58 encoded private key."
       );
     }
 
-    const senderPubKey = senderKeypair.publicKey;
-    console.log("Sender wallet address:", senderPubKey.toString());
+    // Initialize recipient public key (will be validated later)
+    try {
+      this.recipientPubKey = new PublicKey(recipientWalletAddress);
+    } catch (error) {
+      throw new Error(
+        `Invalid recipient wallet address format: ${recipientWalletAddress}`
+      );
+    }
+  }
+
+  /**
+   * Validates a wallet address
+   * @param address - The wallet address to validate
+   * @param type - The type of wallet (sender or recipient)
+   * @returns The validated PublicKey
+   */
+  private async validateWalletAddress(
+    address: string,
+    type: string = "wallet"
+  ): Promise<PublicKey> {
+    try {
+      const pubKey = new PublicKey(address);
+
+      // Check if address is valid Solana public key format
+      if (!PublicKey.isOnCurve(pubKey)) {
+        throw new Error(`Invalid ${type} wallet address format: ${address}`);
+      }
+
+      // For basic SOL accounts, we should check balance instead of account info
+      const balance = await this.connection.getBalance(pubKey);
+      const solBalance = balance / LAMPORTS_PER_SOL;
+      console.log(
+        `${type} wallet balance: ${solBalance.toLocaleString()} SOL (${balance.toString()} lamports)`
+      );
+
+      // We don't throw if balance is 0, just log it
+      if (balance === 0) {
+        console.log(
+          `Warning: ${type} wallet has 0 balance on ${this.network} network`
+        );
+      }
+
+      return pubKey;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Invalid public key input")
+      ) {
+        throw new Error(`Invalid ${type} wallet address format: ${address}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Validates the sender's SOL balance
+   * @param requiredAmount - The amount of SOL required
+   * @param tokenAccountsToCreate - Number of token accounts that may need to be created
+   * @returns The sender's SOL balance
+   */
+  private async validateSenderBalance(
+    requiredAmount: number,
+    tokenAccountsToCreate: number = 0
+  ): Promise<number> {
+    try {
+      const balance = await this.connection.getBalance(this.senderPubKey);
+
+      // Calculate total required with a conservative fee buffer
+      let totalRequired = requiredAmount + TRANSACTION_FEE_BUFFER;
+
+      // Add token account creation costs if needed
+      let tokenAccountCost = 0;
+      if (tokenAccountsToCreate > 0) {
+        tokenAccountCost = TOKEN_ACCOUNT_CREATION_COST * tokenAccountsToCreate;
+        totalRequired += tokenAccountCost;
+        console.log(
+          `Including cost for ${tokenAccountsToCreate} token account${
+            tokenAccountsToCreate > 1 ? "s" : ""
+          } creation: ${(tokenAccountCost / LAMPORTS_PER_SOL).toFixed(6)} SOL`
+        );
+      }
+
+      // Format for human-readable display
+      const solBalance = balance / LAMPORTS_PER_SOL;
+      const solRequired = requiredAmount / LAMPORTS_PER_SOL;
+      const feeBuffer = TRANSACTION_FEE_BUFFER / LAMPORTS_PER_SOL;
+      const solTotalRequired = totalRequired / LAMPORTS_PER_SOL;
+
+      console.log(
+        `Current SOL balance: ${solBalance.toLocaleString()} SOL (${balance.toString()} lamports)`
+      );
+
+      if (requiredAmount > 0) {
+        console.log(
+          `Required amount: ${solRequired.toLocaleString()} SOL (${requiredAmount.toString()} lamports)`
+        );
+      }
+
+      console.log(
+        `Transaction fee buffer: ${feeBuffer.toLocaleString()} SOL (${TRANSACTION_FEE_BUFFER.toString()} lamports)`
+      );
+
+      if (tokenAccountsToCreate > 0) {
+        console.log(
+          `Token account creation cost: ${(
+            tokenAccountCost / LAMPORTS_PER_SOL
+          ).toFixed(6)} SOL (${tokenAccountCost.toString()} lamports)`
+        );
+      }
+
+      console.log(
+        `Total required: ${solTotalRequired.toLocaleString()} SOL (${totalRequired.toString()} lamports)`
+      );
+
+      if (balance < totalRequired) {
+        throw new Error(
+          `Insufficient funds in sender wallet on ${this.network} network. ` +
+            `Balance: ${solBalance.toLocaleString()} SOL, ` +
+            `Required: ${solTotalRequired.toLocaleString()} SOL ` +
+            `(including ${feeBuffer.toLocaleString()} SOL buffer for transaction fees${
+              tokenAccountsToCreate > 0
+                ? ` and ${(tokenAccountCost / LAMPORTS_PER_SOL).toFixed(
+                    6
+                  )} SOL for ${tokenAccountsToCreate} token account${
+                    tokenAccountsToCreate > 1 ? "s" : ""
+                  } creation`
+                : ""
+            })`
+        );
+      }
+
+      return balance;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Insufficient funds")
+      ) {
+        throw error;
+      }
+      throw new Error(
+        `Failed to check sender wallet balance: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  /**
+   * Validates the sender's token balance
+   * @param tokenMint - The token mint
+   * @param requiredAmount - The amount of tokens required
+   * @returns Information about the sender's token account and balance
+   */
+  private async validateSenderTokenBalance(
+    tokenMint: PublicKey,
+    requiredAmount: number
+  ): Promise<SenderTokenInfo> {
+    try {
+      // Try to get the associated token account for the sender
+      let tokenAccount;
+      let hasTokenAccount = true;
+
+      try {
+        // Get the associated token account for the sender
+        tokenAccount = await getOrCreateAssociatedTokenAccount(
+          this.connection,
+          Keypair.generate(), // Dummy keypair for read-only operation
+          tokenMint,
+          this.senderPubKey,
+          false // Don't create if it doesn't exist
+        );
+      } catch (error) {
+        // If the token account doesn't exist, mark it
+        hasTokenAccount = false;
+        console.log(
+          `No token account found for token ${tokenMint.toString()} in sender wallet on ${
+            this.network
+          } network`
+        );
+        console.log(
+          "A token account will be created for the sender during the transfer"
+        );
+
+        // Return with zero balance and hasTokenAccount = false
+        return { balance: BigInt(0), hasTokenAccount };
+      }
+
+      if (!tokenAccount) {
+        hasTokenAccount = false;
+        console.log(
+          `No token account found for token ${tokenMint.toString()} in sender wallet on ${
+            this.network
+          } network`
+        );
+        console.log(
+          "A token account will be created for the sender during the transfer"
+        );
+
+        // Return with zero balance and hasTokenAccount = false
+        return { balance: BigInt(0), hasTokenAccount };
+      }
+
+      // Get the token account info
+      const accountInfo = await getAccount(
+        this.connection,
+        tokenAccount.address
+      );
+      const balance = accountInfo.amount;
+
+      // Get token mint info to determine decimals
+      const mintInfo = await getMint(this.connection, tokenMint);
+      const decimals = mintInfo.decimals;
+      console.log(`Token decimals: ${decimals}`);
+
+      // Convert required amount to token amount considering decimals
+      const requiredTokenAmount = BigInt(
+        Math.floor(requiredAmount * 10 ** decimals)
+      );
+
+      // Format balances for human-readable display
+      const balanceFormatted = Number(balance) / 10 ** decimals;
+      const requiredFormatted = requiredAmount;
+
+      console.log(
+        `Required amount: ${requiredFormatted} tokens (${requiredTokenAmount.toString()} raw)`
+      );
+      console.log(
+        `Current balance: ${balanceFormatted} tokens (${balance.toString()} raw)`
+      );
+
+      if (balance < requiredTokenAmount) {
+        throw new Error(
+          `Insufficient token balance in sender wallet on ${this.network} network. ` +
+            `Balance: ${balanceFormatted} tokens, ` +
+            `Required: ${requiredFormatted} tokens`
+        );
+      }
+
+      return { balance, hasTokenAccount };
+    } catch (error) {
+      // Re-throw if it's an insufficient balance error
+      if (
+        error instanceof Error &&
+        error.message.includes("Insufficient token balance")
+      ) {
+        throw error;
+      }
+
+      // For other errors, provide a more detailed message
+      throw new Error(
+        `Failed to check sender token balance: ${
+          error instanceof Error ? error.message : String(error)
+        }. This may be due to insufficient SOL in the sender's account to create a token account for the recipient. Please ensure the sender has enough SOL to cover transaction fees and token account creation.`
+      );
+    }
+  }
+
+  /**
+   * Validates a token address
+   * @param tokenAddress - The token address to validate
+   * @returns Information about the token
+   */
+  private async validateTokenAddress(tokenAddress: string): Promise<TokenInfo> {
+    try {
+      try {
+        // Validate token mint address
+        console.log(`Validating token address: ${tokenAddress}`);
+        const tokenMint = new PublicKey(tokenAddress);
+
+        // Get token mint info
+        const mintInfo = await getMint(this.connection, tokenMint);
+        console.log(`Token supply: ${mintInfo.supply.toString()}`);
+        console.log(`Token decimals: ${mintInfo.decimals}`);
+
+        // Check if token is frozen
+        if (mintInfo.freezeAuthority) {
+          console.log(
+            `Freeze authority: ${mintInfo.freezeAuthority.toString()} (freezable)`
+          );
+        } else {
+          console.log(`Freeze authority: None (non-freezable)`);
+        }
+
+        return {
+          mint: tokenMint,
+          supply: mintInfo.supply,
+          decimals: mintInfo.decimals,
+        };
+      } catch (error) {
+        throw new Error(
+          `Invalid SPL token: ${tokenAddress}. Error: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Invalid SPL token")
+      ) {
+        throw error;
+      }
+      throw new Error(
+        `Failed to validate token address: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  /**
+   * Initializes the service by validating wallets and token information
+   */
+  public async initialize(): Promise<void> {
+    console.log("Starting Solana payment process...");
+    console.log(`Network: ${this.network}`);
+    console.log(`Connecting to Solana ${this.network}...`);
+    console.log("✓ Connected to network");
+
+    // Log transaction type and amount
+    if (this.isTokenTransfer) {
+      console.log(`Token transfer: ${this.token}`);
+      console.log(`Amount to send: ${this.amount} tokens`);
+    } else {
+      console.log(`SOL transfer`);
+      console.log(`Amount to send: ${this.amount} SOL`);
+    }
+
+    console.log("Sender wallet address:", this.senderPubKey.toString());
 
     // Validate sender wallet
     console.log("Validating sender wallet...");
-    await validateWalletAddress(
-      connection,
-      senderPubKey.toString(),
-      "sender",
-      network
-    );
+    await this.validateWalletAddress(this.senderPubKey.toString(), "sender");
     console.log("✓ Sender wallet validated");
 
     // Validate recipient address
     console.log("Validating recipient wallet...");
-    const recipientPubKey = await validateWalletAddress(
-      connection,
-      recipientWalletAddress,
-      "recipient",
-      network
+    await this.validateWalletAddress(
+      this.recipientPubKey.toString(),
+      "recipient"
     );
     console.log("✓ Recipient wallet validated");
+
+    // Validate token if it's a token transfer
+    if (this.isTokenTransfer) {
+      console.log("Validating token address...");
+      this.tokenInfo = await this.validateTokenAddress(this.token);
+      console.log("✓ Token address validated");
+    }
+  }
+
+  /**
+   * Executes a SOL transfer
+   * @returns The transaction signature
+   */
+  private async executeSolTransfer(): Promise<string> {
+    console.log("Executing SOL transfer...");
+
+    // Check sender SOL balance
+    console.log("Checking sender SOL balance...");
+    await this.validateSenderBalance(
+      this.amount * LAMPORTS_PER_SOL,
+      0 // No token accounts needed for SOL transfer
+    );
+    console.log("✓ Sufficient SOL balance confirmed");
 
     // Create transaction
     console.log("Creating transaction...");
     const transaction = new Transaction();
 
-    if (isTokenTransfer && tokenInfo) {
-      // Token transfer
-      try {
-        // Check sender token balance
-        console.log("Checking sender token balance...");
-        const senderBalance = await validateSenderTokenBalance(
-          connection,
-          senderPubKey,
-          tokenInfo.mint,
-          amount,
-          network
-        );
+    // Add transfer instruction
+    transaction.add(
+      SystemProgram.transfer({
+        fromPubkey: this.senderPubKey,
+        toPubkey: this.recipientPubKey,
+        lamports: this.amount * LAMPORTS_PER_SOL,
+      })
+    );
 
-        // Format balance for display with proper decimal places
-        const senderBalanceFormatted =
-          Number(senderBalance) / 10 ** tokenInfo.decimals;
-        console.log(
-          `Sender token balance: ${senderBalanceFormatted.toLocaleString()} ${token} (${senderBalance.toString()} raw)`
-        );
-        console.log("✓ Sufficient token balance confirmed");
-
-        // Check recipient token account if it exists
-        console.log("Checking recipient token account...");
-        let recipientHasTokenAccount = false;
-        try {
-          const recipientTokenAccount = await getOrCreateAssociatedTokenAccount(
-            connection,
-            Keypair.generate(), // Dummy keypair for read-only operation
-            tokenInfo.mint,
-            recipientPubKey,
-            false // Don't create if it doesn't exist
-          );
-
-          if (recipientTokenAccount) {
-            recipientHasTokenAccount = true;
-            const recipientAccountInfo = await getAccount(
-              connection,
-              recipientTokenAccount.address
-            );
-            const recipientBalance = recipientAccountInfo.amount;
-            const recipientBalanceFormatted =
-              Number(recipientBalance) / 10 ** tokenInfo.decimals;
-            console.log(
-              `Recipient token balance: ${recipientBalanceFormatted.toLocaleString()} ${token} (${recipientBalance.toString()} raw)`
-            );
-          }
-        } catch (error) {
-          recipientHasTokenAccount = false;
-          console.log(
-            "Recipient doesn't have a token account yet. It will be created during transfer."
-          );
-          console.log(
-            `This will require an additional ~${
-              TOKEN_ACCOUNT_CREATION_COST / LAMPORTS_PER_SOL
-            } SOL from the sender for account creation.`
-          );
-        }
-
-        // Check SOL balance for transaction fees
-        console.log("Checking sender SOL balance for transaction fees...");
-        await validateSenderBalance(
-          connection,
-          senderPubKey,
-          0, // No SOL transfer, just need fees
-          network,
-          !recipientHasTokenAccount // May need token account if recipient doesn't have one
-        );
-        console.log("✓ Sufficient SOL balance for fees confirmed");
-
-        // Get sender token account
-        const senderTokenAccount = await getOrCreateAssociatedTokenAccount(
-          connection,
-          senderKeypair,
-          tokenInfo.mint,
-          senderPubKey
-        );
-
-        // Get or create recipient token account
-        const recipientTokenAccount = await getOrCreateAssociatedTokenAccount(
-          connection,
-          senderKeypair,
-          tokenInfo.mint,
-          recipientPubKey,
-          true // Always create if it doesn't exist
-        );
-
-        console.log(
-          `Recipient token account: ${recipientTokenAccount.address.toString()}`
-        );
-        console.log(`✓ Recipient token account is ready for transfer`);
-
-        // Convert amount to token amount considering decimals
-        const tokenAmount = BigInt(
-          Math.floor(amount * 10 ** tokenInfo.decimals)
-        );
-        console.log(
-          `Amount to send: ${amount.toLocaleString()} ${token} (${tokenAmount.toString()} raw)`
-        );
-
-        // Add token transfer instruction
-        transaction.add(
-          createTransferInstruction(
-            senderTokenAccount.address,
-            recipientTokenAccount.address,
-            senderPubKey,
-            tokenAmount,
-            [],
-            TOKEN_PROGRAM_ID
-          )
-        );
-      } catch (error) {
-        throw new Error(
-          `Failed to set up token transfer: ${
-            error instanceof Error ? error.message : String(error)
-          }. This may be due to insufficient SOL in the sender's account to create a token account for the recipient. Please ensure the sender has enough SOL to cover transaction fees and token account creation.`
-        );
-      }
-    } else {
-      // SOL transfer
-      // Check sender balance
-      console.log("Checking sender SOL balance...");
-      const requiredAmount = amount * LAMPORTS_PER_SOL;
-      const senderBalance = await validateSenderBalance(
-        connection,
-        senderPubKey,
-        requiredAmount,
-        network,
-        false // No need for token account
-      );
-      console.log(
-        `Sender SOL balance: ${senderBalance / LAMPORTS_PER_SOL} SOL`
-      );
-      console.log("✓ Sufficient balance confirmed");
-
-      // Check recipient SOL balance
-      console.log("Checking recipient SOL balance...");
-      const recipientBalance = await connection.getBalance(recipientPubKey);
-      console.log(
-        `Recipient SOL balance: ${recipientBalance / LAMPORTS_PER_SOL} SOL`
-      );
-
-      // Add SOL transfer instruction
-      transaction.add(
-        SystemProgram.transfer({
-          fromPubkey: senderPubKey,
-          toPubkey: recipientPubKey,
-          lamports: amount * LAMPORTS_PER_SOL,
-        })
-      );
-    }
-
+    // Send transaction
     console.log("Sending transaction...");
-    const signature = await connection.sendTransaction(transaction, [
-      senderKeypair,
+    const signature = await this.connection.sendTransaction(transaction, [
+      this.senderKeypair,
     ]);
-    console.log("Transaction sent:", signature);
+
+    console.log("Transaction sent with signature:", signature);
+    console.log(
+      `View on Solana Explorer: https://explorer.solana.com/tx/${signature}?cluster=${this.network}`
+    );
 
     // Wait for confirmation
     console.log("Waiting for confirmation...");
-    const confirmation = await connection.confirmTransaction(signature);
+    const confirmation = await this.connection.confirmTransaction(signature);
 
     if (confirmation.value.err) {
-      throw new Error(`Transaction failed: ${confirmation.value.err}`);
-    }
-    console.log("✓ Transaction confirmed");
-
-    // Add network info to success message
-    console.log("🎉 Transaction complete!");
-    if (isTokenTransfer && tokenInfo) {
-      console.log(
-        `Successfully sent ${amount} ${token} tokens to ${recipientWalletAddress} on ${network}`
+      throw new Error(
+        `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
       );
+    }
 
-      // Check final balances after transfer
-      console.log("\nChecking final balances after transfer...");
+    console.log("✓ Transaction confirmed");
+    return signature;
+  }
 
-      try {
-        // Check sender's final token balance
-        const senderTokenAccount = await getOrCreateAssociatedTokenAccount(
-          connection,
-          senderKeypair,
-          tokenInfo.mint,
-          senderPubKey,
-          false
-        );
+  /**
+   * Executes a token transfer
+   * @returns The transaction signature
+   */
+  private async executeTokenTransfer(): Promise<string> {
+    if (!this.tokenInfo) {
+      throw new Error("Token information not initialized");
+    }
 
-        if (senderTokenAccount) {
-          const senderAccountInfo = await getAccount(
-            connection,
-            senderTokenAccount.address
+    console.log("Executing token transfer...");
+
+    // Check if recipient has a token account already
+    let recipientHasTokenAccount = true;
+    try {
+      const recipientTokenAccountAddress = await getAssociatedTokenAddress(
+        this.tokenInfo.mint,
+        this.recipientPubKey
+      );
+      const recipientTokenAccountInfo = await this.connection.getAccountInfo(
+        recipientTokenAccountAddress
+      );
+      recipientHasTokenAccount = recipientTokenAccountInfo !== null;
+      if (recipientHasTokenAccount) {
+        console.log("Recipient already has a token account");
+      }
+    } catch (error) {
+      recipientHasTokenAccount = false;
+      console.log(
+        "Recipient doesn't have a token account yet. It will be created during transfer."
+      );
+      console.log(
+        `This will require an additional ~${
+          TOKEN_ACCOUNT_CREATION_COST / LAMPORTS_PER_SOL
+        } SOL from the sender for account creation.`
+      );
+    }
+
+    // Check if sender has a token account and sufficient token balance
+    console.log("Checking sender token balance...");
+    const senderTokenInfo = await this.validateSenderTokenBalance(
+      this.tokenInfo.mint,
+      this.amount
+    );
+
+    // Determine if we need to create token accounts
+    const needSenderTokenAccount = !senderTokenInfo.hasTokenAccount;
+    const needRecipientTokenAccount = !recipientHasTokenAccount;
+    const accountsToCreate =
+      (needSenderTokenAccount ? 1 : 0) + (needRecipientTokenAccount ? 1 : 0);
+
+    if (needSenderTokenAccount) {
+      console.log(
+        "Sender doesn't have a token account yet. It will be created during transfer."
+      );
+      console.log(
+        `This will require an additional ~${
+          TOKEN_ACCOUNT_CREATION_COST / LAMPORTS_PER_SOL
+        } SOL from the sender for account creation.`
+      );
+    }
+
+    // Format balance for display with proper decimal places
+    const senderBalanceFormatted =
+      Number(senderTokenInfo.balance) / 10 ** this.tokenInfo.decimals;
+    console.log(
+      `Sender token balance: ${senderBalanceFormatted.toLocaleString()} ${
+        this.token
+      } (${senderTokenInfo.balance.toString()} raw)`
+    );
+    console.log("✓ Sufficient token balance confirmed");
+
+    // Check SOL balance for transaction fees
+    console.log("Checking sender SOL balance for transaction fees...");
+    await this.validateSenderBalance(
+      0, // No SOL transfer, just need fees
+      accountsToCreate // Number of token accounts that may need to be created
+    );
+    console.log("✓ Sufficient SOL balance for fees confirmed");
+
+    // Get or create sender token account
+    const senderTokenAccount = await getOrCreateAssociatedTokenAccount(
+      this.connection,
+      this.senderKeypair,
+      this.tokenInfo.mint,
+      this.senderPubKey,
+      true // Create if it doesn't exist
+    );
+
+    // Get or create recipient token account
+    const recipientTokenAccount = await getOrCreateAssociatedTokenAccount(
+      this.connection,
+      this.senderKeypair,
+      this.tokenInfo.mint,
+      this.recipientPubKey,
+      true // Always create if it doesn't exist
+    );
+
+    console.log(
+      `Recipient token account: ${recipientTokenAccount.address.toString()}`
+    );
+    console.log(`✓ Recipient token account is ready for transfer`);
+
+    // Convert amount to token amount considering decimals
+    const tokenAmount = BigInt(
+      Math.floor(this.amount * 10 ** this.tokenInfo.decimals)
+    );
+    console.log(
+      `Amount to send: ${this.amount.toLocaleString()} ${
+        this.token
+      } (${tokenAmount.toString()} raw)`
+    );
+
+    // Create transaction
+    console.log("Creating transaction...");
+    const transaction = new Transaction();
+
+    // Add transfer instruction
+    transaction.add(
+      createTransferInstruction(
+        senderTokenAccount.address,
+        recipientTokenAccount.address,
+        this.senderPubKey,
+        tokenAmount
+      )
+    );
+
+    // Send transaction
+    console.log("Sending transaction...");
+    const signature = await this.connection.sendTransaction(transaction, [
+      this.senderKeypair,
+    ]);
+
+    console.log("Transaction sent with signature:", signature);
+    console.log(
+      `View on Solana Explorer: https://explorer.solana.com/tx/${signature}?cluster=${this.network}`
+    );
+
+    // Wait for confirmation
+    console.log("Waiting for confirmation...");
+    const confirmation = await this.connection.confirmTransaction(signature);
+
+    if (confirmation.value.err) {
+      throw new Error(
+        `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
+      );
+    }
+
+    console.log("✓ Transaction confirmed");
+    return signature;
+  }
+
+  /**
+   * Executes the payment
+   * @returns The transaction signature
+   */
+  public async executePayment(): Promise<string> {
+    // Store token account creation info for SPL transfers
+    let createdSenderTokenAccount = false;
+    let createdRecipientTokenAccount = false;
+
+    // Execute the appropriate transfer type
+    let signature: string;
+
+    if (this.isTokenTransfer) {
+      // Execute token transfer
+      signature = await this.executeTokenTransfer();
+
+      // For token transfers, check if we created token accounts
+      if (this.tokenInfo) {
+        try {
+          // Check if sender token account was just created
+          const senderTokenAddress = await getAssociatedTokenAddress(
+            this.tokenInfo.mint,
+            this.senderPubKey
           );
-          const senderBalance = senderAccountInfo.amount;
-          const senderBalanceFormatted =
-            Number(senderBalance) / 10 ** tokenInfo.decimals;
+          const senderAccountInfo = await this.connection.getAccountInfo(
+            senderTokenAddress
+          );
+          if (senderAccountInfo && senderAccountInfo.lamports > 0) {
+            createdSenderTokenAccount = true;
+          }
+
+          // Check if recipient token account was just created
+          const recipientTokenAddress = await getAssociatedTokenAddress(
+            this.tokenInfo.mint,
+            this.recipientPubKey
+          );
+          const recipientAccountInfo = await this.connection.getAccountInfo(
+            recipientTokenAddress
+          );
+          if (recipientAccountInfo && recipientAccountInfo.lamports > 0) {
+            createdRecipientTokenAccount = true;
+          }
+        } catch (error) {
+          // Ignore errors in this optional check
           console.log(
-            `Sender's final token balance: ${senderBalanceFormatted.toLocaleString()} ${token} (${senderBalance.toString()} raw)`
+            "Note: Could not determine if token accounts were created"
           );
         }
-
-        // Check recipient's final token balance
-        const recipientTokenAccount = await getOrCreateAssociatedTokenAccount(
-          connection,
-          Keypair.generate(), // Dummy keypair for read-only operation
-          tokenInfo.mint,
-          recipientPubKey,
-          false
-        );
-
-        if (recipientTokenAccount) {
-          const recipientAccountInfo = await getAccount(
-            connection,
-            recipientTokenAccount.address
-          );
-          const recipientBalance = recipientAccountInfo.amount;
-          const recipientBalanceFormatted =
-            Number(recipientBalance) / 10 ** tokenInfo.decimals;
-          console.log(
-            `Recipient's final token balance: ${recipientBalanceFormatted.toLocaleString()} ${token} (${recipientBalance.toString()} raw)`
-          );
-        }
-      } catch (error) {
-        console.log(
-          "Could not check final balances:",
-          error instanceof Error ? error.message : String(error)
-        );
       }
     } else {
-      console.log(
-        `Successfully sent ${amount} SOL to ${recipientWalletAddress} on ${network}`
-      );
+      // Execute SOL transfer
+      signature = await this.executeSolTransfer();
+    }
 
-      // Check final SOL balances after transfer
-      console.log("\nChecking final balances after transfer...");
-      try {
-        const senderBalance = await connection.getBalance(senderPubKey);
-        console.log(
-          `Sender's final SOL balance: ${(
-            senderBalance / LAMPORTS_PER_SOL
-          ).toLocaleString()} SOL (${senderBalance.toString()} lamports)`
-        );
+    // Print transaction summary
+    console.log("\n🎉 Transaction Summary:");
+    console.log(
+      `Type: ${
+        this.isTokenTransfer ? `${this.token} Token Transfer` : "SOL Transfer"
+      }`
+    );
+    console.log(
+      `Amount: ${this.amount} ${this.isTokenTransfer ? this.token : "SOL"}`
+    );
+    console.log(`From: ${this.senderPubKey.toString()}`);
+    console.log(`To: ${this.recipientPubKey.toString()}`);
+    console.log(`Network: ${this.network}`);
 
-        const recipientBalance = await connection.getBalance(recipientPubKey);
+    // Add token account creation info if applicable
+    if (this.isTokenTransfer) {
+      if (createdSenderTokenAccount) {
         console.log(
-          `Recipient's final SOL balance: ${(
-            recipientBalance / LAMPORTS_PER_SOL
-          ).toLocaleString()} SOL (${recipientBalance.toString()} lamports)`
+          `✓ Created token account for sender (cost: ${(
+            TOKEN_ACCOUNT_CREATION_COST / LAMPORTS_PER_SOL
+          ).toFixed(6)} SOL)`
         );
-      } catch (error) {
+      }
+      if (createdRecipientTokenAccount) {
         console.log(
-          "Could not check final balances:",
-          error instanceof Error ? error.message : String(error)
+          `✓ Created token account for recipient (cost: ${(
+            TOKEN_ACCOUNT_CREATION_COST / LAMPORTS_PER_SOL
+          ).toFixed(6)} SOL)`
         );
       }
     }
+
     console.log(`Transaction signature: ${signature}`);
     console.log(
-      `Explorer URL: https://explorer.solana.com/tx/${signature}?cluster=${network}`
+      `View on Solana Explorer: https://explorer.solana.com/tx/${signature}?cluster=${this.network}`
     );
     console.log(
-      `Solscan URL: https://solscan.io/tx/${signature}?cluster=${network}`
+      `View on Solscan: https://solscan.io/tx/${signature}?cluster=${this.network}`
     );
 
-    // Set outputs from success
+    return signature;
+  }
+}
+
+/**
+ * Main function to execute the GitHub Action
+ */
+async function main(): Promise<void> {
+  try {
+    // Get sender wallet secret from environment variables
+    const senderWalletSecret = process.env.SENDER_WALLET_SECRET;
+    if (!senderWalletSecret) {
+      throw new Error(
+        "Environment variable SENDER_WALLET_SECRET is not set, please set it in the repository secrets"
+      );
+    }
+
+    // Get inputs from the GitHub Action
+    const recipientWalletAddress = getInput("recipient-wallet-address", {
+      required: true,
+    });
+    const amount = parseFloat(getInput("amount", { required: true }));
+    const network = getInput("network", { required: false }) || "mainnet-beta";
+    const token = getInput("token", { required: true });
+
+    // Create, initialize, and execute the payment service
+    const payoutService = new SolanaPayoutService(
+      senderWalletSecret,
+      recipientWalletAddress,
+      amount,
+      token,
+      network
+    );
+
+    await payoutService.initialize();
+    const signature = await payoutService.executePayment();
+
+    // Set outputs for GitHub Actions
     setOutput("success", "true");
     setOutput("error", "");
     setOutput("transaction", signature);
   } catch (error) {
-    // Set outputs from error
-    setOutput("success", "false");
-    setOutput("error", error instanceof Error ? error.message : String(error));
-    setOutput("transaction", "");
-
     console.error(
       "❌ Error:",
       error instanceof Error ? error.message : String(error)
     );
+
+    // Set outputs for GitHub Actions
+    setOutput("success", "false");
+    setOutput("error", error instanceof Error ? error.message : String(error));
+    setOutput("transaction", "");
+
     setFailed(error instanceof Error ? error.message : String(error));
   }
 }
 
+// Run the main function
 main();
