@@ -301,7 +301,6 @@ async function main(): Promise<void> {
     // Get sender wallet secret from environment variables
     const SENDER_WALLET_SECRET = process.env.SENDER_WALLET_SECRET;
     if (!SENDER_WALLET_SECRET) {
-      setOutput("success", "false");
       throw new Error(
         "Environment variable SENDER_WALLET_SECRET is not set, please set it in the repository secrets"
       );
@@ -360,13 +359,8 @@ async function main(): Promise<void> {
       const privateKeyBytes = bs58.decode(SENDER_WALLET_SECRET);
       senderKeypair = Keypair.fromSecretKey(privateKeyBytes);
     } catch (error: any) {
-      setOutput("success", "false");
-      setOutput(
-        "error",
-        `Failed to parse sender wallet secret: Invalid private key format. Please provide a valid base58 encoded private key.`
-      );
       throw new Error(
-        "Invalid wallet secret format. Please provide a valid base58 encoded private key."
+        "Invalid SENDER_WALLET_SECRET format. Please provide a valid base58 encoded private key."
       );
     }
 
@@ -659,13 +653,12 @@ async function main(): Promise<void> {
       `Solscan URL: https://solscan.io/tx/${signature}?cluster=${network}`
     );
 
-    // Set success output
+    // Set outputs from success
     setOutput("success", "true");
-
-    // Set transaction signature output
+    setOutput("error", "");
     setOutput("transaction", signature);
   } catch (error) {
-    // Set error output and success as false
+    // Set outputs from error
     setOutput("success", "false");
     setOutput("error", error instanceof Error ? error.message : String(error));
     setOutput("transaction", "");
