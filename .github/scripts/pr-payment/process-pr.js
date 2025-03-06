@@ -5,6 +5,11 @@ const prNumber = process.env.PR_NUMBER;
 const prAuthor = process.env.PR_AUTHOR;
 const issues = process.env.ISSUES;
 const repo = process.env.REPO || process.env.GITHUB_REPOSITORY;
+const runId = process.env.GITHUB_RUN_ID || "unknown";
+
+// Get GitHub run information for comment footer
+const runDate = new Date().toISOString();
+const actionInfo = `\n\n<sub>This comment was created by GitHub Actions workflow run [#${runId}](https://github.com/${repo}/actions/runs/${runId}) on ${runDate}</sub>`;
 
 // Prepare issues text for the comment
 let issuesList = "";
@@ -18,7 +23,8 @@ if (issues !== "none") {
   // Add a comment to the PR with issues
   const comment =
     "✅ PR Merged\n\n" +
-    `Thank you @${prAuthor} for your contribution in resolving ${issuesList}!`;
+    `Thank you @${prAuthor} for your contribution in resolving ${issuesList}!` +
+    actionInfo;
 
   const result = spawnSync(
     "gh",
@@ -48,7 +54,9 @@ if (issues !== "none") {
 } else {
   // Add a comment to the PR without issues
   const comment =
-    "✅ PR Merged\n\n" + `Thank you @${prAuthor} for your contribution!`;
+    "✅ PR Merged\n\n" +
+    `Thank you @${prAuthor} for your contribution!` +
+    actionInfo;
 
   const result = spawnSync(
     "gh",

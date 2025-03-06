@@ -11,6 +11,12 @@ const bountyAmount = process.env.BOUNTY_AMOUNT;
 const bountyDetails = process.env.BOUNTY_DETAILS;
 const network = process.env.SOLANA_NETWORK;
 const recipientWallet = process.env.RECIPIENT_WALLET || "";
+const runId = process.env.GITHUB_RUN_ID || "unknown";
+const repo = process.env.GITHUB_REPOSITORY || process.env.REPO;
+
+// Get GitHub run information for comment footer
+const runDate = new Date().toISOString();
+const actionInfo = `\n\n<sub>This comment was created by GitHub Actions workflow run [#${runId}](https://github.com/${repo}/actions/runs/${runId}) on ${runDate}</sub>`;
 
 // Log the wallet address to help with debugging
 console.log(`Processing payment for wallet: ${recipientWallet}`);
@@ -47,7 +53,8 @@ if (success === "true") {
         network !== "mainnet-beta" ? `?cluster=${network}` : ""
       }) | [View on Solscan](https://solscan.io/tx/${transaction}${
         network !== "mainnet-beta" ? `?cluster=${network}` : ""
-      })`;
+      })` +
+      actionInfo;
 
     // Use spawnSync to avoid shell interpretation issues
     const result = spawnSync(
@@ -91,7 +98,8 @@ if (success === "true") {
         network !== "mainnet-beta" ? `?cluster=${network}` : ""
       }) | [View on Solscan](https://solscan.io/tx/${transaction}${
         network !== "mainnet-beta" ? `?cluster=${network}` : ""
-      })`;
+      })` +
+      actionInfo;
 
     // Use spawnSync to avoid shell interpretation issues
     const result = spawnSync(
@@ -131,7 +139,8 @@ if (success === "true") {
     "```\n" +
     `${error}\n` +
     "```\n\n" +
-    "Please contact the repository administrators for assistance.";
+    "Please contact the repository administrators for assistance." +
+    actionInfo;
 
   // Use spawnSync to avoid shell interpretation issues
   const result = spawnSync(

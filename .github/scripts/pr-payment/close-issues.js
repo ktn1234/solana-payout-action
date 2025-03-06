@@ -48,13 +48,19 @@ if (paymentWasMade && !alreadyPaid) {
  * @returns {string} The formatted comment body
  */
 function createCommentBody(wasPaid) {
+  // Get GitHub run information from environment variables
+  const runId = process.env.GITHUB_RUN_ID || "unknown";
+  const runDate = new Date().toISOString();
+  const actionInfo = `<sub>This comment was created by GitHub Actions workflow run [#${runId}](https://github.com/${repo}/actions/runs/${runId}) on ${runDate}</sub>`;
+
   if (wasPaid) {
     // If already paid, use a different message
     if (alreadyPaid) {
       return (
         `✅ This issue was resolved by PR #${prNumber} from @${prAuthor}.\n\n` +
         `Note: This issue was already paid in a previous PR.\n\n` +
-        `See the full PR here: https://github.com/${repo}/pull/${prNumber}`
+        `See the full PR here: https://github.com/${repo}/pull/${prNumber}\n\n` +
+        actionInfo
       );
     }
 
@@ -79,13 +85,14 @@ function createCommentBody(wasPaid) {
       })\n\n`;
     }
 
-    comment += `See the full PR here: https://github.com/${repo}/pull/${prNumber}`;
+    comment += `See the full PR here: https://github.com/${repo}/pull/${prNumber}\n\n${actionInfo}`;
     return comment;
   } else {
     // Standard comment without payment info
     return (
       `✅ This issue was resolved by PR #${prNumber} from @${prAuthor}.\n\n` +
-      `See the full PR here: https://github.com/${repo}/pull/${prNumber}`
+      `See the full PR here: https://github.com/${repo}/pull/${prNumber}\n\n` +
+      actionInfo
     );
   }
 }

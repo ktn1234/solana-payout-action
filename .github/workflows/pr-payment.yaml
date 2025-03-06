@@ -99,7 +99,14 @@ jobs:
         if: steps.check-payment.outputs.already_paid == 'true'
         run: |
           echo "⚠️ Payment skipped because at least one issue has already been paid"
-          gh pr comment ${{ github.event.pull_request.number }} --body "⚠️ **Payment Skipped**\n\nPayment for this PR has been skipped because at least one of the issues has already been paid in a previous PR.\n\nPlease contact the repository administrators if you believe this is an error."
+          MESSAGE="⚠️ **Payment Skipped**
+
+          Payment for this PR has been skipped because at least one of the issues has already been paid in a previous PR.
+
+          Please contact the repository administrators if you believe this is an error.
+
+          <sub>This decision was made by GitHub Actions workflow run [#${{ github.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) on $(date)</sub>"
+          gh pr comment ${{ github.event.pull_request.number }} --body "$MESSAGE"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
