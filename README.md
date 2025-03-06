@@ -42,6 +42,14 @@ A GitHub Action to automatically send Solana payments to specified wallet addres
 | `token`                    | Token to send - either 'SOL' or an SPL token address  | Yes      | -            |
 | `network`                  | Solana network to use (mainnet-beta, devnet, testnet) | No       | mainnet-beta |
 
+## Outputs
+
+| Output        | Description                                         |
+| ------------- | --------------------------------------------------- |
+| `success`     | Whether the payment was successful (true/false)     |
+| `error`       | The error that occurred during the payment (if any) |
+| `transaction` | The transaction signature for successful payments   |
+
 ## Environment Variables
 
 | Variable               | Description                                           | Required |
@@ -76,6 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: UraniumCorporation/solana-payout-action@v1
+        id: send-payment
         with:
           recipient-wallet-address: ${{ inputs.recipient }}
           amount: ${{ inputs.amount }}
@@ -83,6 +92,15 @@ jobs:
           network: "mainnet-beta"
         env:
           SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
+
+      # Example of using the transaction output
+      - name: Process Transaction Result
+        if: steps.send-payment.outputs.success == 'true'
+        run: |
+          echo "Payment successful!"
+          echo "Transaction signature: ${{ steps.send-payment.outputs.transaction }}"
+          echo "View on Solana Explorer: https://explorer.solana.com/tx/${{ steps.send-payment.outputs.transaction }}"
+          echo "View on Solscan: https://solscan.io/tx/${{ steps.send-payment.outputs.transaction }}"
 ```
 
 ### Token Payment Example
