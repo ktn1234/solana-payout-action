@@ -7,8 +7,6 @@ import {
   PublicKey,
   Transaction,
   SystemProgram,
-  AccountInfo,
-  ParsedAccountData,
 } from "@solana/web3.js";
 import {
   getOrCreateAssociatedTokenAccount,
@@ -17,6 +15,7 @@ import {
   TOKEN_PROGRAM_ID,
   getMint,
 } from "@solana/spl-token";
+import bs58 from "bs58";
 
 interface NetworkUrls {
   [key: string]: string;
@@ -355,9 +354,22 @@ async function main(): Promise<void> {
     }
 
     // Create sender keypair
-    const senderKeypair = Keypair.fromSecretKey(
-      new Uint8Array(JSON.parse(SENDER_WALLET_SECRET))
-    );
+    let senderKeypair: Keypair;
+    try {
+      // Parse the private key as a base58 encoded string (standard format from Solana wallets)
+      const privateKeyBytes = bs58.decode(SENDER_WALLET_SECRET);
+      senderKeypair = Keypair.fromSecretKey(privateKeyBytes);
+    } catch (error: any) {
+      setOutput("success", "false");
+      setOutput(
+        "error",
+        `Failed to parse sender wallet secret: Invalid private key format. Please provide a valid base58 encoded private key.`
+      );
+      throw new Error(
+        "Invalid wallet secret format. Please provide a valid base58 encoded private key."
+      );
+    }
+
     const senderPubKey = senderKeypair.publicKey;
     console.log("Sender wallet address:", senderPubKey.toString());
 
