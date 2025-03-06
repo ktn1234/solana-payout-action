@@ -137,7 +137,7 @@ for (const issueNumber of issueNumbers) {
 
       try {
         // Use spawnSync to avoid shell interpretation issues with special characters
-        spawnSync(
+        const result = spawnSync(
           "gh",
           [
             "api",
@@ -148,10 +148,29 @@ for (const issueNumber of issueNumbers) {
             `body=${commentBody}`,
           ],
           {
-            stdio: "inherit",
+            stdio: ["inherit", "ignore", "pipe"], // Capture stdout to get the comment URL
+            encoding: "utf-8",
           }
         );
-        console.log(`Added comment to already closed issue #${issueNumber}`);
+
+        // Parse the JSON response to get the HTML URL of the comment
+        let commentUrl = "";
+        try {
+          if (result.stdout) {
+            const response = JSON.parse(result.stdout);
+            commentUrl = response.html_url || "";
+          }
+        } catch (parseError) {
+          console.log(
+            `Note: Could not parse comment URL: ${parseError.message}`
+          );
+        }
+
+        console.log(
+          `Added comment to already closed issue #${issueNumber}${
+            commentUrl ? ` (${commentUrl})` : ""
+          }`
+        );
       } catch (commentError) {
         console.error(
           `Error adding comment to issue #${issueNumber}: ${commentError.message}`
@@ -170,7 +189,7 @@ for (const issueNumber of issueNumbers) {
 
     try {
       // Use spawnSync to avoid shell interpretation issues with special characters
-      spawnSync(
+      const result = spawnSync(
         "gh",
         [
           "api",
@@ -181,8 +200,26 @@ for (const issueNumber of issueNumbers) {
           `body=${commentBody}`,
         ],
         {
-          stdio: "inherit",
+          stdio: ["inherit", "ignore", "pipe"], // Capture stdout to get the comment URL
+          encoding: "utf-8",
         }
+      );
+
+      // Parse the JSON response to get the HTML URL of the comment
+      let commentUrl = "";
+      try {
+        if (result.stdout) {
+          const response = JSON.parse(result.stdout);
+          commentUrl = response.html_url || "";
+        }
+      } catch (parseError) {
+        console.log(`Note: Could not parse comment URL: ${parseError.message}`);
+      }
+
+      console.log(
+        `Added comment to issue #${issueNumber}${
+          commentUrl ? ` (${commentUrl})` : ""
+        }`
       );
     } catch (commentError) {
       console.error(
@@ -205,7 +242,7 @@ for (const issueNumber of issueNumbers) {
           "state=closed",
         ],
         {
-          stdio: "inherit",
+          stdio: ["inherit", "ignore", "inherit"],
         }
       );
       console.log(

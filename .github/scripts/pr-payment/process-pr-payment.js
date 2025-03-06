@@ -46,9 +46,31 @@ if (success === "true") {
       })`;
 
     // Use spawnSync to avoid shell interpretation issues
-    spawnSync("gh", ["pr", "comment", prNumber, "--body", successComment], {
-      stdio: "inherit",
-    });
+    const result = spawnSync(
+      "gh",
+      ["pr", "comment", prNumber, "--body", successComment],
+      {
+        stdio: ["inherit", "pipe", "inherit"],
+        encoding: "utf8",
+      }
+    );
+
+    // Parse the response to get the comment URL
+    let commentUrl = "";
+    try {
+      if (result.stdout) {
+        // The gh pr comment command outputs the URL directly
+        commentUrl = result.stdout.trim();
+      }
+    } catch (parseError) {
+      console.log(`Note: Could not parse comment URL: ${parseError.message}`);
+    }
+
+    console.log(
+      `Added success comment to PR #${prNumber} with issues reference${
+        commentUrl ? ` (${commentUrl})` : ""
+      }`
+    );
   } else {
     // Add a comment to the PR without issues
     const successComment =
@@ -64,9 +86,31 @@ if (success === "true") {
       })`;
 
     // Use spawnSync to avoid shell interpretation issues
-    spawnSync("gh", ["pr", "comment", prNumber, "--body", successComment], {
-      stdio: "inherit",
-    });
+    const result = spawnSync(
+      "gh",
+      ["pr", "comment", prNumber, "--body", successComment],
+      {
+        stdio: ["inherit", "pipe", "inherit"],
+        encoding: "utf8",
+      }
+    );
+
+    // Parse the response to get the comment URL
+    let commentUrl = "";
+    try {
+      if (result.stdout) {
+        // The gh pr comment command outputs the URL directly
+        commentUrl = result.stdout.trim();
+      }
+    } catch (parseError) {
+      console.log(`Note: Could not parse comment URL: ${parseError.message}`);
+    }
+
+    console.log(
+      `Added success comment to PR #${prNumber}${
+        commentUrl ? ` (${commentUrl})` : ""
+      }`
+    );
   }
 } else {
   console.log("❌ Payment failed:");
@@ -82,8 +126,30 @@ if (success === "true") {
     "Please contact the repository administrators for assistance.";
 
   // Use spawnSync to avoid shell interpretation issues
-  spawnSync("gh", ["pr", "comment", prNumber, "--body", failureComment], {
-    stdio: "inherit",
-  });
+  const result = spawnSync(
+    "gh",
+    ["pr", "comment", prNumber, "--body", failureComment],
+    {
+      stdio: ["inherit", "pipe", "inherit"],
+      encoding: "utf8",
+    }
+  );
+
+  // Parse the response to get the comment URL
+  let commentUrl = "";
+  try {
+    if (result.stdout) {
+      // The gh pr comment command outputs the URL directly
+      commentUrl = result.stdout.trim();
+    }
+  } catch (parseError) {
+    console.log(`Note: Could not parse comment URL: ${parseError.message}`);
+  }
+
+  console.log(
+    `Added failure comment to PR #${prNumber}${
+      commentUrl ? ` (${commentUrl})` : ""
+    }`
+  );
   process.exit(1);
 }
