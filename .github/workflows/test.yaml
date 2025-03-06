@@ -1,4 +1,4 @@
-name: Test Solana Payout Action
+name: 🧪 Test Solana Payout Action
 on:
   # Manual trigger with inputs
   workflow_dispatch:
@@ -26,13 +26,13 @@ on:
 
 jobs:
   test-local:
-    name: Test Local Action
+    name: 🧪 Test Solana Payout Action
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Test Solana Payout Action
+      - name: 💰 Solana Payout Action
         uses: ./ # Uses the action in the root directory
         id: payout
         with:
@@ -43,7 +43,13 @@ jobs:
         env:
           SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
 
-      - name: Check Results
+      - name: 🪵 Log Solana Payout Action Outputs
+        run: |
+          echo "Success: ${{ steps.payout.outputs.success }}"
+          echo "Error: ${{ steps.payout.outputs.error }}"
+          echo "Transaction: ${{ steps.payout.outputs.transaction }}"
+
+      - name: 🪵 Log Payout Results
         run: |
           if [[ "${{ steps.payout.outputs.success }}" == "true" ]]; then
             echo "✅ Payment successful!"
