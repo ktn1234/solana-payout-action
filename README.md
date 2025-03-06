@@ -7,6 +7,9 @@ A GitHub Action to automatically send Solana payments to specified wallet addres
 - Send SOL or SPL tokens to any valid Solana wallet address
 - Support for multiple Solana networks (mainnet-beta, devnet, testnet)
 - Validates wallet addresses and balances before transactions
+  - Checks for sufficient SOL balance to cover transaction fees (0.1 SOL buffer)
+  - Verifies sufficient token balance for token transfers
+  - Ensures sender has enough SOL to create token accounts if recipient doesn't have one (0.003 SOL buffer)
 - Comprehensive error handling and validation
 
 ## Usage
@@ -35,108 +38,108 @@ A GitHub Action to automatically send Solana payments to specified wallet addres
 
 ## Inputs
 
-| Input                      | Description                                           | Required | Default      |
-| -------------------------- | ----------------------------------------------------- | -------- | ------------ |
-| `recipient-wallet-address` | Solana wallet address to receive the payment          | Yes      | -            |
-| `amount`                   | Amount to send (in SOL or tokens)                     | Yes      | -            |
-| `token`                    | Token to send - either 'SOL' or an SPL token address  | Yes      | -            |
-| `network`                  | Solana network to use (mainnet-beta, devnet, testnet) | No       | mainnet-beta |
+| Input                      | Description                                           | Type   | Required | Default      |
+| -------------------------- | ----------------------------------------------------- | ------ | -------- | ------------ |
+| `recipient-wallet-address` | Solana wallet address to receive the payment          | string | Yes      | -            |
+| `amount`                   | Amount to send (in SOL or tokens)                     | string | Yes      | -            |
+| `token`                    | Token to send - either 'SOL' or an SPL token address  | string | Yes      | -            |
+| `network`                  | Solana network to use (mainnet-beta, devnet, testnet) | string | No       | mainnet-beta |
 
 ## Outputs
 
-| Output        | Description                                         |
-| ------------- | --------------------------------------------------- |
-| `success`     | Whether the payment was successful (true/false)     |
-| `error`       | The error that occurred during the payment (if any) |
-| `transaction` | The transaction signature for successful payments   |
+| Output        | Description                                         | Type    |
+| ------------- | --------------------------------------------------- | ------- |
+| `success`     | Whether the payment was successful (true/false)     | boolean |
+| `error`       | The error that occurred during the payment (if any) | string  |
+| `transaction` | The transaction signature for successful payments   | string  |
 
 ## Environment Variables
 
-| Variable               | Description                                           | Required |
-| ---------------------- | ----------------------------------------------------- | -------- |
-| `SENDER_WALLET_SECRET` | Private key of the sender's wallet (as a JSON string) | Yes      |
+| Variable               | Description                                         | Type   | Required |
+| ---------------------- | --------------------------------------------------- | ------ | -------- |
+| `SENDER_WALLET_SECRET` | Private key of the sender's wallet in base58 format | string | Yes      |
 
 ## Setup
 
 1. Create a Solana wallet to use as the sender
 2. Add the wallet's private key as a repository secret named `SENDER_WALLET_SECRET`
-3. Ensure the sender wallet has sufficient SOL for the transactions
+   - The private key must be in base58 format (the standard format used by all Solana wallets)
+   - Example: `4wBqpZM9xkVJc8j7Z3gVxmBpMpRxLsQpiUbLaZCziaKAcXdwdKxRvKoRZGYXvEQZUNk5UJUZyeLHz1vHvfnzHYbN`
+   - You can export this from wallets like Phantom, Solflare, or Backpack
+   - No other formats are supported
+3. Ensure the sender wallet has sufficient SOL for the transactions:
+   - For SOL transfers: At least 0.103 SOL (0.1 SOL buffer + 0.003 SOL for fees) plus the amount you want to send
+   - For SPL token transfers: At least 0.103 SOL for fees and potential token account creation, plus the token amount
 4. If sending SPL tokens, ensure the sender wallet has the tokens and SOL for transaction fees
+
+> [!IMPORTANT]
+> The action requires a minimum of 0.103 SOL in the sender wallet to cover transaction fees and potential token account creation, regardless of the amount being transferred.
 
 ## Example Workflow
 
-### Basic SOL Payment
+### Basic SOL/SPL Token Payment Example (Manual Trigger)
 
 ```yaml
-name: Send SOL Payment
+name: Send SOL/SPL Token Payment
 on:
+  # Manual trigger with inputs
   workflow_dispatch:
     inputs:
       recipient:
         description: "Recipient wallet address"
         required: true
       amount:
-        description: "Amount in SOL"
+        description: "Amount to send (in SOL or tokens)"
         required: true
+        default: "0.1"
+      token:
+        description: "Token to send - either 'SOL' or an SPL token address"
+        required: true
+        default: "SOL"
+      network:
+        description: "Solana network (mainnet-beta, devnet, testnet)"
+        required: true
+        default: "devnet"
+        type: choice
+        options:
+          - mainnet-beta
+          - devnet
+          - testnet
 
 jobs:
   send-payment:
     runs-on: ubuntu-latest
     steps:
-      - uses: UraniumCorporation/solana-payout-action@v1
-        id: send-payment
-        with:
-          recipient-wallet-address: ${{ inputs.recipient }}
-          amount: ${{ inputs.amount }}
-          token: "SOL"
-          network: "mainnet-beta"
-        env:
-          SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
-
-      # Example of using the transaction output
-      - name: Process Transaction Result
-        if: steps.send-payment.outputs.success == 'true'
-        run: |
-          echo "Payment successful!"
-          echo "Transaction signature: ${{ steps.send-payment.outputs.transaction }}"
-          echo "View on Solana Explorer: https://explorer.solana.com/tx/${{ steps.send-payment.outputs.transaction }}"
-          echo "View on Solscan: https://solscan.io/tx/${{ steps.send-payment.outputs.transaction }}"
-```
-
-### Token Payment Example
-
-```yaml
-name: Send Token Payment
-on:
-  workflow_dispatch:
-    inputs:
-      recipient:
-        description: "Recipient wallet address"
-        required: true
-      amount:
-        description: "Amount of tokens"
-        required: true
-      token:
-        description: "Token address"
-        required: true
-
-jobs:
-  send-token-payment:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: UraniumCorporation/solana-payout-action@v1
+      - name: Solana Payout Action
+      uses: UraniumCorporation/solana-payout-action@v1
+        id: payout
         with:
           recipient-wallet-address: ${{ inputs.recipient }}
           amount: ${{ inputs.amount }}
           token: ${{ inputs.token }}
-          network: "mainnet-beta"
+          network: ${{ inputs.network }}
         env:
           SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
+
+      # Example of using the transaction output
+      - name: Print Successful Payment Details
+        if: steps.payout.outputs.success == 'true'
+        run: |
+          echo "Payment successful!"
+          echo "Transaction signature: ${{ steps.payout.outputs.transaction }}"
+          echo "View on Solana Explorer: https://explorer.solana.com/tx/${{ steps.payout.outputs.transaction }}"
+          echo "View on Solscan: https://solscan.io/tx/${{ steps.payout.outputs.transaction }}"
 ```
 
-### Use Case: Automated PR Reward System
+### Use Case: Simple Automated PR Reward System
 
-This example shows how to automatically pay contributors when their PR is merged.
+This example below shows how to automatically pay contributors in SOL/SPL Tokens when their PR is merged.
+
+> [!CAUTION]
+> This is a simplified example below and does not have any security guardrails in place. Please ensure you have the appropriate security measures applied in your workflow for your use case. DO NOT simply copy this example and use it as is in a production environment.
+
+> [!TIP]
+> For a more production-ready example of an automated PR reward system, please refer to [Uranium Corporation's Maiar AI repo's PR Payment Workflow](https://github.com/UraniumCorporation/maiar-ai/blob/main/.github/workflows/pr-payment.yaml).
 
 #### Pull Request Format Requirements
 
@@ -150,7 +153,7 @@ solana:ABC123...XYZ
 Example PR description:
 
 ```markdown
-Fixed bug in authentication module
+Fixed bug
 
 ## Wallet Address
 
@@ -164,6 +167,10 @@ name: Pay Contributor
 on:
   pull_request:
     types: [closed]
+
+env:
+  SOLANA_NETWORK: "mainnet-beta" # or devnet, testnet, etc.
+  TOKEN: "SOL" # Pay in SOL/SPL Tokens - Valid values are 'SOL' or an SPL token address
 
 jobs:
   pay-contributor:
@@ -182,41 +189,8 @@ jobs:
         with:
           recipient-wallet-address: ${{ steps.extract-wallet.outputs.wallet }}
           amount: "1.0"
-          token: "SOL" # Pay in SOL
-          network: "mainnet-beta"
-        env:
-          SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
-```
-
-### Use Case: Token-Based Reward System
-
-This example shows how to pay contributors with a specific SPL token.
-
-```yaml
-name: Pay Contributor with Tokens
-on:
-  pull_request:
-    types: [closed]
-
-jobs:
-  pay-contributor-with-tokens:
-    if: github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
-    steps:
-      # Extract wallet address from PR description
-      - name: Extract wallet address
-        id: extract-wallet
-        run: |
-          DESCRIPTION="${{ github.event.pull_request.body }}"
-          WALLET=$(echo "$DESCRIPTION" | grep -o 'solana:[A-Za-z0-9]\{32,\}' | cut -d':' -f2)
-          echo "wallet=$WALLET" >> $GITHUB_OUTPUT
-
-      - uses: UraniumCorporation/solana-payout-action@v1
-        with:
-          recipient-wallet-address: ${{ steps.extract-wallet.outputs.wallet }}
-          amount: "10.0" # 10 tokens
-          token: "YOUR_TOKEN_ADDRESS" # Replace with your token address
-          network: "mainnet-beta"
+          token: ${{ env.TOKEN }}
+          network: ${{ env.SOLANA_NETWORK }}
         env:
           SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
 ```
