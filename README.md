@@ -48,11 +48,11 @@ A GitHub Action to automatically pay SOL/SPL tokens to a specified recipient wal
 
 ## Outputs
 
-| Output        | Description                                         | Type    |
-| ------------- | --------------------------------------------------- | ------- |
-| `success`     | Whether the payment was successful (true/false)     | boolean |
-| `error`       | The error that occurred during the payment (if any) | string  |
-| `transaction` | The transaction signature for successful payments   | string  |
+| Output        | Description                                         | Type             | Possible Values                                                            |
+| ------------- | --------------------------------------------------- | ---------------- | -------------------------------------------------------------------------- |
+| `success`     | Whether the payment was successful                  | string (boolean) | `"true"`, `"false"`                                                        |
+| `error`       | The error that occurred during the payment (if any) | string           | `"<error-message>"`, `""` (empty string if `success` == `"true"`)          |
+| `transaction` | The transaction signature for successful payments   | string           | `"<transaction-signature>"`, `""` (empty string if `success` == `"false"`) |
 
 ## Environment Variables
 
