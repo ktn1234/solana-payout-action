@@ -249,7 +249,7 @@ export class SolanaPayoutService {
     // Check sender SOL balance
     console.log("Checking sender SOL balance...");
     await this.validateSenderBalance({
-      requiredAmount: this.amount * LAMPORTS_PER_SOL,
+      requiredSolAmount: this.amount * LAMPORTS_PER_SOL,
       tokenAccountsToCreate: 0, // No token accounts needed for SOL transfer
     });
     console.log("✓ Sufficient SOL balance confirmed");
@@ -363,7 +363,7 @@ export class SolanaPayoutService {
       "Checking sender SOL balance to cover transaction fees and token account creation costs..."
     );
     await this.validateSenderBalance({
-      requiredAmount: 0, // No SOL transfer, just need fees
+      requiredSolAmount: 0, // No SOL transfer, just need fees
       tokenAccountsToCreate,
     });
     console.log("✓ Sufficient SOL balance for fees confirmed");
@@ -476,17 +476,17 @@ export class SolanaPayoutService {
    * @param tokenAccountsToCreate - Number of token accounts that need to be created
    */
   private async validateSenderBalance({
-    requiredAmount,
+    requiredSolAmount,
     tokenAccountsToCreate,
   }: {
-    requiredAmount: number;
+    requiredSolAmount: number;
     tokenAccountsToCreate: number;
   }): Promise<void> {
     try {
       const balance = await this.connection.getBalance(this.senderPubKey);
 
       // Calculate total required with a conservative fee buffer
-      let totalRequired = requiredAmount + TRANSACTION_FEE_BUFFER;
+      let totalRequired = requiredSolAmount + TRANSACTION_FEE_BUFFER;
 
       // Add token account creation costs if needed
       let tokenAccountCost = 0;
@@ -497,7 +497,7 @@ export class SolanaPayoutService {
 
       // Format for human-readable display
       const solBalance = balance / LAMPORTS_PER_SOL;
-      const solRequired = requiredAmount / LAMPORTS_PER_SOL;
+      const solRequired = requiredSolAmount / LAMPORTS_PER_SOL;
       const feeBuffer = TRANSACTION_FEE_BUFFER / LAMPORTS_PER_SOL;
       const solTotalRequired = totalRequired / LAMPORTS_PER_SOL;
 
@@ -522,9 +522,9 @@ export class SolanaPayoutService {
         );
       }
 
-      if (requiredAmount > 0) {
+      if (requiredSolAmount > 0) {
         console.log(
-          `Required amount: ${solRequired.toLocaleString()} SOL (${requiredAmount.toString()} lamports)`
+          `Required amount: ${solRequired.toLocaleString()} SOL (${requiredSolAmount.toString()} lamports)`
         );
       }
 
