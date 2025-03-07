@@ -2,8 +2,8 @@ name: "Solana Payout Action"
 description: "Automatically pay SOL/SPL tokens to a specified recipient wallet address in Solana"
 author: "UraniumCorporation"
 branding:
-  icon: "dollar-sign"
-  color: "purple"
+  icon: "box"
+  color: "green"
 inputs:
   recipient-wallet-address:
     description: "Solana wallet address of the recipient"
