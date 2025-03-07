@@ -1,6 +1,6 @@
 # Solana Payout Action
 
-A GitHub Action to automatically send Solana payments to specified wallet addresses.
+A GitHub Action to automatically pay SOL/SPL tokens to a specified recipient wallet address in Solana.
 
 ## Features
 

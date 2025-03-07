@@ -1,7 +1,7 @@
 {
   "name": "solana-payout-action",
-  "version": "1.0.0",
-  "description": "Automatically pay contributors in Solana",
+  "version": "0.0.1",
+  "description": "Automatically pay SOL/SPL tokens to a specified recipient wallet address in Solana",
   "keywords": [
     "solana",
     "payout",
