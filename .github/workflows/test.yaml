@@ -29,7 +29,7 @@ jobs:
     name: 🧪 Test Solana Payout Action
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: 🛒 Checkout
         uses: actions/checkout@v4
 
       - name: 💰 Solana Payout Action
