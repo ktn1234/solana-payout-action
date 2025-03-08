@@ -140,7 +140,7 @@ This example below shows how to automatically pay contributors in SOL/SPL Tokens
 > This is a simplified example below and does not have any security guardrails in place. Please ensure you have the appropriate security measures applied in your workflow for your use case. DO NOT simply copy this example and use it as is in a production environment.
 
 > [!TIP]
-> For a more production-ready example of an automated PR reward system, please refer to [Uranium Corporation's Maiar AI repo's PR Payment Workflow](https://github.com/UraniumCorporation/maiar-ai/blob/main/.github/workflows/pr-payment.yaml).
+> For a more production-ready example of an automated PR reward system, please refer to [Uranium Corporation's Maiar AI repo's Bounty Payment Workflow](https://github.com/UraniumCorporation/maiar-ai/blob/main/.github/workflows/bounty.yaml).
 
 #### Pull Request Format Requirements
 
