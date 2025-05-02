@@ -17,22 +17,24 @@ A GitHub Action to automatically pay SOL/SPL tokens to a specified recipient wal
 
 ```yaml
 # Send SOL
-- uses: UraniumCorporation/solana-payout-action@v0.0.1
+- uses: UraniumCorporation/solana-payout-action@v0.0.2
   with:
     recipient-wallet-address: "RECIPIENT_WALLET_ADDRESS"
     amount: "1.5" # Amount in SOL
     token: "SOL"
     network: "mainnet-beta" # Optional (default: mainnet-beta)
+    timeout: 300000 # Optional (default: 300000ms = 5 minutes)
   env:
     SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
 
 # Send SPL Tokens
-- uses: UraniumCorporation/solana-payout-action@v0.0.1
+- uses: UraniumCorporation/solana-payout-action@v0.0.2
   with:
     recipient-wallet-address: "RECIPIENT_WALLET_ADDRESS"
     amount: "10" # Amount in tokens
     token: "TOKEN_ADDRESS" # SPL token address
     network: "mainnet-beta" # Optional (default: mainnet-beta)
+    timeout: 300000 # Optional (default: 300000ms = 5 minutes)
   env:
     SENDER_WALLET_SECRET: ${{ secrets.SENDER_WALLET_SECRET }}
 ```
@@ -118,7 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Solana Payout Action
-      uses: UraniumCorporation/solana-payout-action@v0.0.1
+      uses: UraniumCorporation/solana-payout-action@v0.0.2
         id: payout
         with:
           recipient-wallet-address: ${{ inputs.recipient }}
@@ -193,7 +195,7 @@ jobs:
           WALLET=$(echo "$DESCRIPTION" | grep -o 'solana:[A-Za-z0-9]\{32,\}' | cut -d':' -f2)
           echo "wallet=$WALLET" >> $GITHUB_OUTPUT
 
-      - uses: UraniumCorporation/solana-payout-action@v0.0.1
+      - uses: UraniumCorporation/solana-payout-action@v0.0.2
         with:
           recipient-wallet-address: ${{ steps.extract-wallet.outputs.wallet }}
           amount: "1.0"
