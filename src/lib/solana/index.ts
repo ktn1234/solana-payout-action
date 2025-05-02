@@ -9,7 +9,6 @@ import {
 } from "@solana/web3.js";
 import {
   getOrCreateAssociatedTokenAccount,
-  getAccount,
   getMint,
   getAssociatedTokenAddress,
   createTransferInstruction,
@@ -20,7 +19,7 @@ import {
   NETWORK_URLS,
   TRANSACTION_FEE_BUFFER,
   TOKEN_ACCOUNT_CREATION_COST,
-} from "../constants";
+} from "../../constants";
 
 /**
  * SolanaPayoutService - A class to handle Solana payments
@@ -56,7 +55,8 @@ export class SolanaPayoutService {
     recipientWalletAddress: string,
     amount: number,
     token: string | "SOL",
-    network: string
+    network: string,
+    timeout: number
   ) {
     // Validate inputs
     if (isNaN(amount) || amount <= 0) {
@@ -76,7 +76,9 @@ export class SolanaPayoutService {
     this.token = token;
     this.network = network;
     this.isTokenTransfer = token.toUpperCase() !== "SOL";
-    this.connection = new Connection(NETWORK_URLS[network]);
+    this.connection = new Connection(NETWORK_URLS[network], {
+      confirmTransactionInitialTimeout: timeout,
+    });
     this.mint = null; // Gets set in initialize()
 
     // Create sender keypair
