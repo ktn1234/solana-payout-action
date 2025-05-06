@@ -1,4 +1,5 @@
-name: 🧪 Test Solana Payout Action
+---
+name: 💰 Solana Payout Action
 on:
   # Manual trigger with inputs
   workflow_dispatch:
@@ -30,8 +31,8 @@ on:
         type: number
 
 jobs:
-  test-local:
-    name: 🧪 Test Solana Payout Action
+  solana-payout:
+    name: 💰 Solana Payout Action
     runs-on: ubuntu-latest
     steps:
       - name: 🛒 Checkout
@@ -40,6 +41,7 @@ jobs:
       - name: 💰 Solana Payout Action
         uses: ./ # Uses the action in the root directory
         id: payout
+        continue-on-error: true
         with:
           recipient-wallet-address: ${{ inputs.recipient }}
           amount: ${{ inputs.amount }}
