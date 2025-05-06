@@ -1,0 +1,74 @@
+---
+name: ♻️ CI Workflow
+run-name: "♻️ CI Workflow - PR #${{ github.event.pull_request.number }} commit ${{ github.sha }} by @${{ github.actor }}"
+on:
+  pull_request_target:
+    branches:
+      - "*"
+
+env:
+  CI: ${{ vars.CI }}
+  HUSKY: ${{ vars.HUSKY }}
+
+permissions:
+  contents: read # Needed for the checkout action
+
+jobs:
+  commit-lint:
+    name: 🧹 Commit Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛒 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for all branches and tags
+
+      - uses: ./.github/actions/setup
+
+      - name: 🧹 Lint Commits
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: .commitlintrc.ts
+          helpURL: https://github.com/conventional-changelog/commitlint/#what-is-commitlint
+
+  typecheck:
+    name: 🔤 Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛒 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: ./.github/actions/setup
+
+      - name: 🔤 Typecheck
+        run: npm run typecheck
+
+  lint:
+    name: 🧹 Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛒 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: ./.github/actions/setup
+
+      - name: 🧹 Lint
+        run: npm run lint
+
+  build:
+    name: 🧱 Build Packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛒 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: ./.github/actions/setup
+
+      - name: 🧱 Build Packages
+        run: npm run build
