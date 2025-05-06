@@ -18,7 +18,7 @@ A GitHub Action to automatically pay SOL/SPL tokens to a specified recipient wal
 ```yaml
 # Send SOL
 - name: Solana Payout Action - Send SOL
-  uses: UraniumCorporation/solana-payout-action@v0.0.2
+  uses: UraniumCorporation/solana-payout-action@v0.0.3
   with:
     recipient-wallet-address: "RECIPIENT_WALLET_ADDRESS"
     amount: "1.5" # Amount in SOL
@@ -30,7 +30,7 @@ A GitHub Action to automatically pay SOL/SPL tokens to a specified recipient wal
 
 # Send SPL Token(s)
 - name: Solana Payout Action - Send SPL Token(s)
-  uses: UraniumCorporation/solana-payout-action@v0.0.2
+  uses: UraniumCorporation/solana-payout-action@v0.0.3
   with:
     recipient-wallet-address: "RECIPIENT_WALLET_ADDRESS"
     amount: "10" # Amount in tokens
@@ -121,7 +121,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Solana Payout Action
-        uses: UraniumCorporation/solana-payout-action@v0.0.2
+        uses: UraniumCorporation/solana-payout-action@v0.0.3
           id: payout
           continue-on-error: true
           with:
@@ -205,7 +205,7 @@ jobs:
           WALLET=$(echo "$DESCRIPTION" | grep -o 'solana:[A-Za-z0-9]\{32,\}' | cut -d':' -f2)
           echo "wallet=$WALLET" >> $GITHUB_OUTPUT
 
-      - uses: UraniumCorporation/solana-payout-action@v0.0.2
+      - uses: UraniumCorporation/solana-payout-action@v0.0.3
         with:
           recipient-wallet-address: ${{ steps.extract-wallet.outputs.wallet }}
           amount: "1.0"
