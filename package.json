@@ -1,6 +1,6 @@
 {
   "name": "solana-payout-action",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Automatically pay SOL/SPL tokens to a specified recipient wallet address in Solana",
   "keywords": [
     "solana",
@@ -12,10 +12,21 @@
     "reward"
   ],
   "main": "dist/index.js",
+  "type": "module",
   "scripts": {
+    "prepare": "husky",
     "prestart": "npm run build",
+    "start": "NODE_NO_WARNINGS=1 tsx scripts/start.ts",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "lint": "eslint . --max-warnings 0",
     "build": "ncc build src/index.ts -o dist -m",
-    "start": "NODE_NO_WARNINGS=1 node dist/index.js"
+    "release": "release-it",
+    "release:dry": "release-it --dry-run --ci",
+    "release:info": "release-it --release-version",
+    "contributors": "tsx scripts/contributors.ts",
+    "commit": "cz",
+    "commitlint": "commitlint --edit",
+    "prettier": "prettier --write ."
   },
   "author": "UraniumCorporation <contact@uraniumcube.com> (https://uraniumcube.com/)",
   "license": "MIT",
@@ -35,14 +46,31 @@
     "@solana/spl-token": "0.4.13",
     "@solana/web3.js": "1.98.2",
     "bs58": "6.0.0",
-    "dotenv": "16.4.7"
+    "dotenv": "16.4.7",
+    "winston": "3.17.0"
   },
   "devDependencies": {
+    "@commitlint/cli": "19.8.0",
+    "@commitlint/config-conventional": "19.8.0",
+    "@commitlint/format": "19.8.0",
+    "@commitlint/types": "19.8.0",
+    "@eslint/js": "9.26.0",
+    "@release-it/conventional-changelog": "10.0.1",
+    "@trivago/prettier-plugin-sort-imports": "5.2.2",
     "@types/bs58": "4.0.4",
     "@types/node": "22.13.5",
     "@vercel/ncc": "0.38.3",
-    "ts-node": "10.9.2",
-    "tsx": "^4.19.4",
-    "typescript": "5.7.3"
+    "commitizen": "4.3.1",
+    "cz-conventional-changelog": "3.3.0",
+    "eslint-config-prettier": "10.1.2",
+    "husky": "9.1.7",
+    "prettier": "3.5.3",
+    "release-it": "19.0.1",
+    "tsx": "4.19.4",
+    "typescript": "5.7.3",
+    "typescript-eslint": "8.31.1"
+  },
+  "overrides": {
+    "conventional-changelog-conventionalcommits": "8.0.0"
   }
 }

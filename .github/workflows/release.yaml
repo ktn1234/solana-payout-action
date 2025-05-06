@@ -1,0 +1,47 @@
+---
+name: 🏷️ Github Release
+run-name: 🏷️ Github Release - Tag & Publish Latest Release from ${{ github.ref_name }} by @${{ github.actor }}
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: ${{ vars.CI }}
+  HUSKY: ${{ vars.HUSKY }}
+
+permissions:
+  contents: write # Needed for the checkout action and to create a release
+
+jobs:
+  github-release:
+    name: 🏷️ Github Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔑 Create GitHub App Token
+        uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: 🛒 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: 🔧 Configure Git
+        run: |
+          git config --global user.name "${{ github.actor }}"
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
+
+      - uses: ./.github/actions/setup
+
+      - name: 🔖 Github Release (Tag + Release)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run release -- --ci

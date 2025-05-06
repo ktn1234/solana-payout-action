@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    open-pull-requests-limit: 0 # Disable version updates for npm dependencies
+    directory: "/"
+    schedule:
+      interval: "daily" # Check the npm registry for updates every day (weekdays)
+    labels:
+      - "dependencies"

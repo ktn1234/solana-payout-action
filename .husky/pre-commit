@@ -1,0 +1,11 @@
+# .husky/pre-commit
+
+# Check if there are any staged changes (added, copied, modified, renamed)
+files=$(git diff --cached --name-only --diff-filter=ACMR | sed 's| |\\ |g')
+
+# Only run prettier and eslint if there are staged files
+if [ -n "$files" ]; then
+  prettier $files --write --ignore-unknown
+  eslint $files --fix --no-warn-ignored --max-warnings 0
+  git update-index --again
+fi
