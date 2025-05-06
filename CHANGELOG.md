@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.0.3](https://github.com/UraniumCorporation/solana-payout-action/compare/v0.0.2...v0.0.3) (2025-05-06)
+
+### 🩹 Fixes
+
+* create missing recipient token account automatically during token transfers ([#4](https://github.com/UraniumCorporation/solana-payout-action/issues/4)) ([93a8a20](https://github.com/UraniumCorporation/solana-payout-action/commit/93a8a20d6bf134182bcf7b1349561e80b47c7829))
+
+### 🔥 Performance
+
+* **solana:** ⚡️ optimize tx fee validation, improve logging and error handling, and repo logistics ([#5](https://github.com/UraniumCorporation/solana-payout-action/issues/5)) ([a84daaf](https://github.com/UraniumCorporation/solana-payout-action/commit/a84daafddde5156ca5a9fbd0b295e907f3db9622))
+
+### 🏡 Chore
+
+* **release:** 📦 automate adding contributors to github release notes and changelog ([#7](https://github.com/UraniumCorporation/solana-payout-action/issues/7)) ([9759f00](https://github.com/UraniumCorporation/solana-payout-action/commit/9759f001c3a5625d803a20d6364abdc330eecb2b))
+
+### Thank You ❤️
+
+* ktn1234
+* SolSoc @SolSoc
+
 ## [0.0.2](https://github.com/UraniumCorporation/solana-payout-action/compare/v0.0.1...v0.0.2) (2025-05-02)
 
 ### 🩹 Fixes
