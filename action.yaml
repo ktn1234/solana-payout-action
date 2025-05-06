@@ -8,6 +8,9 @@ inputs:
   recipient-wallet-address:
     description: "Solana wallet address of the recipient"
     required: true
+  token:
+    description: "Token to send - either 'SOL' or an SPL token address"
+    required: true
   amount:
     description: "Amount to send (in SOL or tokens)"
     required: true
@@ -15,9 +18,6 @@ inputs:
     description: "Solana network to use (mainnet-beta, devnet, testnet)"
     required: false
     default: "mainnet-beta"
-  token:
-    description: "Token to send - either 'SOL' or an SPL token address"
-    required: true
   timeout:
     description: "Timeout to confirm the transaction in milliseconds"
     required: false
