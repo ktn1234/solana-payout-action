@@ -21,7 +21,7 @@
   },
   "hooks": {
     "after:bump": "npm run build && git add dist",
-    "before:release": "npm run contributors && git add CHANGELOG.md",
+    "before:release": "npm run contributors && npm run readme && git add CHANGELOG.md README.md",
     "after:release": "npm run patch && echo 'Successfully released ${name} v${version} to ${repo.repository}'"
   },
   "plugins": {
