@@ -1,0 +1,71 @@
+---
+name: 🔙 Rollback
+run-name: 🔙 Rollback to ${{ inputs.commit }} Commit Hash by ${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "Commit hash to rollback to (only the first 7 characters are needed)"
+        type: string
+        required: true
+
+permissions:
+  contents: write # Needed for the checkout action and to delete a release
+
+jobs:
+  rollback:
+    name: 🔙 Rollback to ${{ inputs.commit }} Commit Hash
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔑 Create GitHub App Token
+        uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: 🛒 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for all tags
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: 🔧 Configure Git
+        run: |
+          git config --global user.name "${{ github.actor }}"
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
+
+      - name: 🔎 Validate Rollback Commit Exists
+        run: |
+          if ! git cat-file -e "${{ inputs.commit }}^{commit}"; then
+            echo "❌ Commit ${{ inputs.commit }} not found"
+            exit 1
+          fi
+
+      - name: 💣 Delete tags and GitHub Releases after Rollback Commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          { git log --pretty=format:"%H" ${{ inputs.commit }}..HEAD; echo; } | while read commit; do
+            if [ -n "$commit" ]; then
+              tags=$(git tag --points-at "$commit")
+              if [ -n "$tags" ]; then
+                for tag in $tags; do
+                  echo "Deleting tag $tag and its associated release"
+                  git push --delete origin "$tag"
+                  git tag -d "$tag"
+                  gh release delete "$tag" -y || echo "No release found for $tag, skipping..."
+                done
+              else
+                echo "No tags found for commit $commit"
+              fi
+            else
+              echo "Skipping empty commit hash..."
+            fi
+          done
+
+      - name: 🧨 Force reset and push
+        run: |
+          git reset --hard "${{ inputs.commit }}"
+          git push origin HEAD --force
