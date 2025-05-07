@@ -48,6 +48,11 @@ const repo = "solana-payout-action";
     }
   }
 
+  // If no username was found, set the username to the name
+  for (const [name, username] of authorToUsername) {
+    if (!username) authorToUsername.set(name, `@${name}`);
+  }
+
   // Get the changelog
   const changelog = fs.readFileSync(CHANGELOG_PATH, "utf-8");
 
